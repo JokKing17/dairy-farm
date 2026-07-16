@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Notifications" description="Acknowledge, snooze and resolve operational exceptions." columns={["Alert","Date","Description","Impact","Status"]}/>}

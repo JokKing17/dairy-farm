@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Reports" description="Statements, reconciliation, profitability and audit-ready exports." columns={["Report","Period","Description","Value","Status"]}/>}

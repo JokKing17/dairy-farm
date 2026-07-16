@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Shop Sales" description="Anonymous daily summaries and named credit sales." columns={["Number","Date","Channel","Amount","Status"]}/>}

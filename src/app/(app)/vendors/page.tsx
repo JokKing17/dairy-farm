@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Vendors" description="Milk suppliers, rate history and running payables." columns={["Code","Vendor","Today’s supply","Payable","Status"]}/>}

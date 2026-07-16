@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Production" description="Milk conversion, yield, loss and batch costing." columns={["Batch","Date","Product","Output value","Status"]}/>}

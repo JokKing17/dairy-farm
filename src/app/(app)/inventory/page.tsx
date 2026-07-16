@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Inventory" description="Perpetual stock by product and storage location." columns={["SKU","Product","Location","On hand","Status"]}/>}

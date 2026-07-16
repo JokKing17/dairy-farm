@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Expenses" description="Operating expenses, approvals and receipt attachments." columns={["Number","Category","Method","Amount","Status"]}/>}

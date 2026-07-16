@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Routes" description="Daily household delivery plans and collections." columns={["Number","Date","Description","Revenue","Status"]}/>}

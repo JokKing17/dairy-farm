@@ -1,0 +1,1 @@
+import{ModulePage}from"@/components/module-page";export default function Page(){return <ModulePage title="Cashbook" description="Cash movements, party ledgers and daily closing." columns={["Number","Date","Description","Amount","Status"]}/>}

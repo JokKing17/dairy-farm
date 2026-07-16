@@ -1,0 +1,1 @@
+import{db}from"@/lib/db";export async function GET(){try{await (await db()).command({ping:1});return Response.json({status:"healthy",database:"connected",time:new Date().toISOString()})}catch{return Response.json({status:"degraded",database:"unavailable",time:new Date().toISOString()},{status:503})}}
