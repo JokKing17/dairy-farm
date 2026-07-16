@@ -1,1 +1,24 @@
-import {Milk,ShieldCheck,ChartNoAxesCombined} from "lucide-react";export default function Login(){return <main className="login"><section className="login-art"><div className="brand"><b className="brandmark"><Milk/></b><span>DairyFlow</span></div><div><h1 style={{fontSize:45,lineHeight:1.08,letterSpacing:"-.04em",maxWidth:520}}>Every liter accounted for. Every rupee understood.</h1><p style={{color:"#c2ddd3",maxWidth:500,lineHeight:1.7}}>Procurement, deliveries, production, stock, ledgers and daily cash—one secure workspace for your dairy business.</p></div><div style={{display:"flex",gap:25,fontSize:12,color:"#c2ddd3"}}><span><ShieldCheck size={16}/> Role-based access</span><span><ChartNoAxesCombined size={16}/> Live business insight</span></div></section><section className="login-form"><form className="login-box"><div className="title">Welcome back</div><p className="subtitle" style={{marginBottom:28}}>Sign in to your private business workspace.</p><div className="field" style={{marginBottom:15}}><label>Email address</label><input type="email" placeholder="owner@dairyflow.pk"/></div><div className="field" style={{marginBottom:20}}><label>Password</label><input type="password" placeholder="••••••••••••"/></div><button className="button" style={{width:"100%",padding:12}}>Sign in securely</button><p className="subtitle" style={{textAlign:"center",marginTop:18}}>Forgot password? Contact the business owner.</p></form></section></main>}
+import { ChartNoAxesCombined, Milk, ShieldCheck } from "lucide-react";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { LoginForm } from "./login-form";
+
+export default async function LoginPage() {
+  if (await getSession()) redirect("/dashboard");
+  return (
+    <main className="login">
+      <section className="login-art">
+        <div className="brand"><b className="brandmark"><Milk /></b><span>DairyFlow</span></div>
+        <div>
+          <h1>Every liter accounted for. Every rupee understood.</h1>
+          <p>Procurement, deliveries, production, stock, ledgers and daily cash—one secure workspace for your dairy business.</p>
+        </div>
+        <div className="login-features">
+          <span><ShieldCheck size={16} /> Role-based access</span>
+          <span><ChartNoAxesCombined size={16} /> Live business insight</span>
+        </div>
+      </section>
+      <section className="login-form"><LoginForm /></section>
+    </main>
+  );
+}

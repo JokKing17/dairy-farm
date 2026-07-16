@@ -1,0 +1,5 @@
+.dashboard-heading { display: flex; justify-content: space-between; gap: 20px; }
+.degraded-banner { display: flex; gap: 12px; margin-top: 22px; padding: 16px; border: 1px solid #fecdca; background: #fef3f2; color: #b42318; border-radius: 12px; }
+.degraded-banner div { display: grid; gap: 3px; }
+.degraded-banner span { font-size: 12px; }
+@media(max-width:600px){.dashboard-heading{align-items:flex-start;flex-direction:column}}

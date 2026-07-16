@@ -1,0 +1,6 @@
+.procurement-toolbar { justify-content: space-between; margin-bottom: 15px; }
+.procurement-toolbar input, .procurement-toolbar select, .table input { border: 1px solid var(--line); border-radius: 7px; padding: 8px; max-width: 150px; }
+.procurement-totals { display: flex; align-items: center; justify-content: flex-end; gap: 28px; padding-top: 20px; }
+.procurement-totals span { display: grid; gap: 4px; }
+.procurement-totals small { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+@media(max-width:700px){.procurement-totals{align-items:stretch;flex-direction:column}.procurement-toolbar{align-items:flex-start;flex-direction:column}}

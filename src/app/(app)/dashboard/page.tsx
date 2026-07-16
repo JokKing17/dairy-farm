@@ -1,3 +1,34 @@
-import {dashboard} from "@/lib/queries";import {formatPKR} from "@/lib/money";import {ArrowUpRight,TriangleAlert} from "lucide-react";export const dynamic="force-dynamic";
-const n=(v:unknown)=>{if(v&&typeof v==="object"&&"toString" in v)return BigInt(v.toString());return 0n};
-export default async function Dashboard(){let x:Awaited<ReturnType<typeof dashboard>>|null=null;try{x=await dashboard()}catch{}const k=[...["Milk purchased",`${Number(n(x?.purchases?.quantity))/1000} L`,`Today’s vendor intake`],["Purchase cost",formatPKR(n(x?.purchases?.amount)),"Posted procurement"],["Sales",formatPKR(n(x?.sales?.amount)),"All channels"],["Expenses",formatPKR(n(x?.expenses?.amount)),"Posted today"],["Receivables",formatPKR(n(x?.receivables?.balance)),"Money to receive"],["Vendor payables",formatPKR(n(x?.payables?.balance)),"Money to pay"],["Closing milk","—","Pending reconciliation"],["Open alerts",String(x?.alerts??0),"Needs attention"]] as [string,string,string][];return <div className="content"><div style={{display:"flex",justifyContent:"space-between",gap:20}}><div><div className="title">Good evening, Hafiz</div><div className="subtitle">Here’s the pulse of your dairy business today.</div></div><a className="button" href="/quick-entry">+ Record transaction</a></div><section className="grid kpis">{k.map(([a,b,c])=><article className="card" key={a}><div className="kpi-label">{a}</div><div className="kpi-value">{b}</div><div className="kpi-note"><ArrowUpRight size={12} style={{display:"inline"}}/> {c}</div></article>)}</section><section className="grid split"><article className="card"><div className="section-title">Today’s milk flow</div>{[["Purchased",82],["City routes",58],["Shop sales",42],["Production",31]].map(([a,b])=><div className="barrow" key={a}><span>{a}</span><div className="bar"><i style={{width:`${b}%`}}/></div><b>{b} L</b></div>)}</article><article className="card"><div className="section-title">Attention needed</div>{["Daily cash closing is pending","Route B has not been completed","Milk stock count is due"].map((a,i)=><div className="alert" key={a}><span className="dot" style={i===0?{background:"#d54a3a"}:{}}/><div><b>{a}</b><div className="subtitle">Review operational task</div></div></div>)}<a href="/notifications" className="button secondary" style={{display:"block",textAlign:"center",marginTop:15}}>View notification center <TriangleAlert size={13}/></a></article></section></div>}
+import { AlertTriangle, ArrowRight } from "lucide-react";
+import { Long } from "mongodb";
+import { requireSession } from "@/lib/auth";
+import { formatMilli, formatPKR } from "@/lib/money";
+import { dashboard } from "@/lib/queries";
+
+export const dynamic = "force-dynamic";
+
+function bigint(value: unknown) {
+  return value instanceof Long ? value.toBigInt() : 0n;
+}
+
+function greeting() {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", hour12: false }).format(new Date()));
+  return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+}
+
+export default async function DashboardPage() {
+  const session = await requireSession();
+  let data: Awaited<ReturnType<typeof dashboard>> | null = null;
+  let error = false;
+  try { data = await dashboard(); } catch { error = true; }
+  const cards = data ? [
+    ["Milk purchased", `${formatMilli(bigint(data.purchases?.quantity))} L`, "Posted procurement"],
+    ["Purchase cost", formatPKR(bigint(data.purchases?.amount)), "Today’s vendor intake"],
+    ["Revenue", formatPKR(bigint(data.sales?.amount)), "Posted sales and deliveries"],
+    ["Expenses", formatPKR(bigint(data.expenses?.amount)), "Posted today"],
+    ["Receivables", formatPKR(bigint(data.receivables?.balance)), "Money to receive"],
+    ["Vendor payables", formatPKR(bigint(data.payables?.balance)), "Money to pay"],
+    ["Milk movements", String(data.milkFlow.length), "Movement categories today"],
+    ["Open alerts", String(data.alerts.length), "Needs attention"],
+  ] : [];
+  return <div className="content"><div className="dashboard-heading"><div><div className="title">{greeting()}, {session.name}</div><div className="subtitle">Business date {data?.businessDate ?? "unavailable"}{data ? ` · refreshed ${data.refreshedAt.toLocaleTimeString("en-PK", { timeZone: "Asia/Karachi" })}` : ""}</div></div><a className="button" href="/quick-entry">Record procurement <ArrowRight size={14}/></a></div>{error ? <div className="degraded-banner" role="alert"><AlertTriangle size={18}/><div><b>Dashboard data is unavailable</b><span>MongoDB could not complete one or more analytics queries. No values have been replaced with zero.</span></div></div> : <><section className="grid kpis">{cards.map(([label,value,note])=><article className="card" key={label}><div className="kpi-label">{label}</div><div className="kpi-value">{value}</div><div className="kpi-note">{note}</div></article>)}</section><section className="grid split"><article className="card"><div className="section-title">Today’s milk movements</div>{data?.milkFlow.length ? <table className="table"><thead><tr><th>Movement</th><th>Quantity</th></tr></thead><tbody>{data.milkFlow.map((row)=><tr key={String(row._id)}><td>{String(row._id).replaceAll("-"," ")}</td><td><b>{formatMilli(bigint(row.quantity))} L</b></td></tr>)}</tbody></table> : <div className="empty-state"><b>No milk movements today</b><span>Posted procurement, sales, deliveries and production will appear here.</span></div>}</article><article className="card"><div className="section-title">Attention needed</div>{data?.alerts.length ? data.alerts.map((alert)=><div className="alert" key={alert._id.toString()}><span className="dot"/><div><b>{String(alert.title ?? "Operational alert")}</b><div className="subtitle">{String(alert.message ?? "Review this item")}</div></div></div>) : <div className="empty-state"><b>No open alerts</b><span>Operational exceptions will appear here.</span></div>}</article></section></>}</div>;
+}

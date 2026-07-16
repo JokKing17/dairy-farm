@@ -1,0 +1,10 @@
+.login-art h1 { font-size: 45px; line-height: 1.08; letter-spacing: -.04em; max-width: 520px; }
+.login-art > div > p { color: #c2ddd3; max-width: 500px; line-height: 1.7; }
+.login-features { display: flex; gap: 25px; font-size: 12px; color: #c2ddd3; }
+.login-features span, .topbar .subtitle, .button { display: inline-flex; align-items: center; gap: 7px; }
+.login-intro { margin-bottom: 28px; }
+.login-field { margin-bottom: 15px; }
+.login-submit { width: 100%; padding: 12px; justify-content: center; }
+.login-help { text-align: center; margin-top: 18px; }
+.form-error { background: #fef3f2; border: 1px solid #fecdca; color: var(--danger); padding: 10px 12px; border-radius: 9px; font-size: 12px; margin-bottom: 15px; }
+.button:disabled { opacity: .6; cursor: wait; }

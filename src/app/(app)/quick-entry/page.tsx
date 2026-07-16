@@ -1,2 +1,19 @@
-const vendors=["Al-Rehman Farm","Chaudhry Akram","Khalid Dairy","Noor Milk Farm","Usman Village Supply"];
-export default function QuickEntry(){return <div className="content"><div className="title">Vendor milk entry</div><div className="subtitle">Morning shift · Today · rates are snapshotted when posted</div><div className="card" style={{marginTop:22,overflowX:"auto"}}><div className="toolbar" style={{justifyContent:"space-between",marginBottom:15}}><div className="toolbar"><select className="button secondary"><option>Morning shift</option><option>Evening shift</option></select><button className="button secondary">16 Jul 2026</button></div><span className="badge">Draft auto-saved</span></div><table className="table"><thead><tr><th>Vendor</th><th>Quantity (L)</th><th>Rate / L</th><th>Line amount</th><th>Quality / notes</th><th>Status</th></tr></thead><tbody>{vendors.map((v,i)=><tr key={v}><td><b>{v}</b><div className="subtitle">V-{String(i+1).padStart(3,"0")}</div></td><td><input style={{width:100,padding:8,border:"1px solid var(--line)",borderRadius:7}} defaultValue={i<3?[60,42.5,55][i]:""}/></td><td>PKR {[180,182,179,181,180][i]}</td><td><b>{i<3?`PKR ${[10800,7735,9845][i].toLocaleString()}`:"—"}</b></td><td><input style={{padding:8,border:"1px solid var(--line)",borderRadius:7}} placeholder="Optional note"/></td><td><span className="badge">{i<3?"Ready":"No pickup"}</span></td></tr>)}</tbody></table><div style={{display:"flex",justifyContent:"flex-end",gap:30,alignItems:"center",paddingTop:20}}><div><span className="kpi-label">TOTAL MILK</span><b style={{marginLeft:8}}>157.5 L</b></div><div><span className="kpi-label">TOTAL COST</span><b style={{marginLeft:8}}>PKR 28,380</b></div><button className="button">Review & post batch</button></div></div></div>}
+import { Long } from "mongodb";
+import { db } from "@/lib/db";
+import { formatPKR } from "@/lib/money";
+import { ProcurementForm } from "./procurement-form";
+
+export const dynamic = "force-dynamic";
+
+function karachiDate() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
+
+export default async function QuickEntryPage() {
+  const database = await db();
+  const vendors = await database.collection("vendors").aggregate([
+    { $match: { active: true } }, { $sort: { name: 1 } },
+    { $lookup: { from: "vendor_rate_history", let: { vendor: "$_id" }, pipeline: [{ $match: { $expr: { $eq: ["$vendorId", "$$vendor"] }, effectiveFrom: { $lte: new Date() }, $or: [{ effectiveTo: null }, { effectiveTo: { $gt: new Date() } }] } }, { $sort: { effectiveFrom: -1 } }, { $limit: 1 }], as: "rate" } },
+    { $project: { code: 1, name: 1, rate: { $first: "$rate.ratePaisa" } } },
+  ]).toArray();
+  const rows = vendors.map((vendor) => ({ id: vendor._id.toString(), code: String(vendor.code), name: String(vendor.name), rate: formatPKR((vendor.rate as Long | undefined)?.toBigInt() ?? 0n).replace("PKR ", "").replaceAll(",", "") }));
+  return <div className="content"><div className="title">Vendor milk entry</div><div className="subtitle">Rates are loaded from effective-dated vendor history and snapshotted when posted.</div>{rows.length ? <ProcurementForm vendors={rows} today={karachiDate()} /> : <div className="card empty-state table-card"><b>No active vendors</b><span>Add a vendor and milk rate before posting procurement.</span></div>}</div>;
+}

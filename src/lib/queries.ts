@@ -1,2 +1,20 @@
 import { db } from "./db";
-export async function dashboard(){const d=await db();const start=new Date();start.setHours(0,0,0,0);const [purchases,sales,expenses,receivables,payables,alerts]=await Promise.all([d.collection("milk_purchases").aggregate([{$match:{createdAt:{$gte:start},status:"posted"}},{$group:{_id:null,quantity:{$sum:"$quantityMilli"},amount:{$sum:"$amountPaisa"}}}]).next(),d.collection("financial_transactions").aggregate([{$match:{createdAt:{$gte:start},kind:"sale",status:"posted"}},{$group:{_id:null,amount:{$sum:"$amountPaisa"}}}]).next(),d.collection("expenses").aggregate([{$match:{createdAt:{$gte:start},status:"posted"}},{$group:{_id:null,amount:{$sum:"$amountPaisa"}}}]).next(),d.collection("party_ledger_entries").aggregate([{$match:{partyType:"customer",status:"posted"}},{$group:{_id:null,balance:{$sum:{$subtract:["$debitPaisa","$creditPaisa"]}}}}]).next(),d.collection("party_ledger_entries").aggregate([{$match:{partyType:"vendor",status:"posted"}},{$group:{_id:null,balance:{$sum:{$subtract:["$creditPaisa","$debitPaisa"]}}}}]).next(),d.collection("notifications").countDocuments({status:"open"})]);return{purchases,sales,expenses,receivables,payables,alerts}}
+
+export function karachiBusinessDate(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+export async function dashboard() {
+  const database = await db();
+  const businessDate = karachiBusinessDate();
+  const [purchases, sales, expenses, receivables, payables, alerts, milkFlow] = await Promise.all([
+    database.collection("milk_purchases").aggregate([{ $match: { businessDate, status: "posted" } }, { $group: { _id: null, quantity: { $sum: "$quantityMilli" }, amount: { $sum: "$amountPaisa" } } }]).next(),
+    database.collection("financial_transactions").aggregate([{ $match: { businessDate, kind: { $in: ["sale", "customer_delivery"] }, status: "posted" } }, { $group: { _id: null, amount: { $sum: "$amountPaisa" } } }]).next(),
+    database.collection("expenses").aggregate([{ $match: { businessDate, status: "posted" } }, { $group: { _id: null, amount: { $sum: "$amountPaisa" } } }]).next(),
+    database.collection("party_ledger_entries").aggregate([{ $match: { partyType: "customer", status: "posted" } }, { $group: { _id: null, balance: { $sum: { $subtract: ["$debitPaisa", "$creditPaisa"] } } } }]).next(),
+    database.collection("party_ledger_entries").aggregate([{ $match: { partyType: "vendor", status: "posted" } }, { $group: { _id: null, balance: { $sum: { $subtract: ["$creditPaisa", "$debitPaisa"] } } } }]).next(),
+    database.collection("notifications").find({ status: "open" }).sort({ createdAt: -1 }).limit(5).project({ title: 1, message: 1, severity: 1 }).toArray(),
+    database.collection("inventory_movements").aggregate([{ $match: { businessDate, status: "posted", productSku: "MILK-001" } }, { $group: { _id: "$type", quantity: { $sum: "$quantityMilli" } } }, { $sort: { _id: 1 } }]).toArray(),
+  ]);
+  return { businessDate, purchases, sales, expenses, receivables, payables, alerts, milkFlow, refreshedAt: new Date() };
+}

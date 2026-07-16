@@ -1,3 +1,33 @@
-import Link from "next/link";import {LayoutDashboard,Zap,Truck,Users,Route,ShoppingBasket,Warehouse,Factory,ReceiptText,WalletCards,ChartNoAxesCombined,Bell,Settings,Milk} from "lucide-react";
-const groups=[{n:"Workspace",items:[["Dashboard","/dashboard",LayoutDashboard],["Quick Entry","/quick-entry",Zap]]},{n:"Operations",items:[["Vendors","/vendors",Truck],["Customers","/customers",Users],["Routes","/routes",Route],["Shop Sales","/sales",ShoppingBasket],["Inventory","/inventory",Warehouse],["Production","/production",Factory]]},{n:"Finance",items:[["Expenses","/expenses",ReceiptText],["Cash & Ledgers","/cashbook",WalletCards],["Reports","/reports",ChartNoAxesCombined]]},{n:"System",items:[["Notifications","/notifications",Bell],["Settings","/settings",Settings]]}];
-export function Sidebar(){return <aside className="sidebar"><div className="brand"><b className="brandmark"><Milk size={20}/></b><span>DairyFlow</span></div><nav className="nav">{groups.map(g=><div key={g.n}><div className="navgroup">{g.n}</div>{g.items.map(([n,h,I])=>{const Icon=I as typeof Milk;return <Link key={String(n)} href={String(h)}><Icon size={16}/><span>{String(n)}</span></Link>})}</div>)}</nav></aside>}
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Bell, ChartNoAxesCombined, Factory, LayoutDashboard, Milk, ReceiptText, Route, Settings, ShoppingBasket, Truck, Users, WalletCards, Warehouse, Zap } from "lucide-react";
+
+const groups = [
+  { name: "Workspace", items: [["Dashboard", "/dashboard", LayoutDashboard], ["Quick Entry", "/quick-entry", Zap]] },
+  { name: "Operations", items: [["Vendors", "/vendors", Truck], ["Customers", "/customers", Users], ["Routes", "/routes", Route], ["Shop Sales", "/sales", ShoppingBasket], ["Inventory", "/inventory", Warehouse], ["Production", "/production", Factory]] },
+  { name: "Finance", items: [["Expenses", "/expenses", ReceiptText], ["Cash & Ledgers", "/cashbook", WalletCards], ["Reports", "/reports", ChartNoAxesCombined]] },
+  { name: "System", items: [["Notifications", "/notifications", Bell], ["Settings", "/settings", Settings]] },
+] as const;
+
+export function Sidebar() {
+  const pathname = usePathname();
+  return (
+    <aside className="sidebar">
+      <div className="brand"><b className="brandmark"><Milk size={20} /></b><span>DairyFlow</span></div>
+      <nav className="nav" aria-label="Main navigation">
+        {groups.map((group) => (
+          <div key={group.name}>
+            <div className="navgroup">{group.name}</div>
+            {group.items.map(([name, href, Icon]) => (
+              <Link key={name} href={href} className={pathname === href || pathname.startsWith(`${href}/`) ? "active" : undefined}>
+                <Icon size={16} /><span>{name}</span>
+              </Link>
+            ))}
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}

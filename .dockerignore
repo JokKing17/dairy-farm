@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+.next
+node_modules
+coverage
+reports
+playwright-report
+test-results
+*.log
+*.tsbuildinfo
+Dockerfile*
+README.md

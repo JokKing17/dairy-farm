@@ -1,0 +1,5 @@
+.vendor-form { margin-top: 22px; }
+.table-card { margin-top: 18px; overflow-x: auto; }
+.empty-state { display: grid; place-items: center; gap: 7px; padding: 42px 20px; color: var(--muted); text-align: center; }
+.empty-state b { color: var(--ink); font-size: 15px; }
+.form-success { background: #ecfdf3; border: 1px solid #abefc6; color: #067647; padding: 10px 12px; border-radius: 9px; font-size: 12px; margin-bottom: 12px; }
