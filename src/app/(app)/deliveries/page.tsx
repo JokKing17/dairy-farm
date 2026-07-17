@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { formatMilli, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { DeliverySheet } from "./delivery-sheet";
+import { DAILY_DELIVERY_PRODUCT_FILTER } from "@/lib/product-eligibility";
 export const dynamic="force-dynamic";
 
 export default async function DailyDeliveriesPage(){
@@ -9,7 +10,7 @@ export default async function DailyDeliveriesPage(){
   const [customers,settings,products,existingBatch]=await Promise.all([
     database.collection("customers").aggregate([{$match:{active:true,customerType:"household"}},{$lookup:{from:"customer_rate_history",let:{customer:"$_id"},pipeline:[{$match:{$expr:{$eq:["$customerId","$$customer"]},effectiveFrom:{$lte:now},$or:[{effectiveTo:null},{effectiveTo:{$gt:now}}]}},{$sort:{effectiveFrom:-1}},{$limit:1}],as:"effectiveRate"}},{$sort:{deliverySequence:1,name:1}}]).toArray(),
     database.collection("business_settings").findOne({_id:"default" as never}),
-    database.collection("products").find({active:true,sku:{$in:["YOG-001","KUNDA-001","BREAD-001","EGG-001","GL-001"]}}).sort({name:1}).toArray(),
+    database.collection("products").find(DAILY_DELIVERY_PRODUCT_FILTER).sort({name:1}).toArray(),
     database.collection("delivery_batches").findOne({businessDate,status:"posted"}),
   ]);
   const defaultRate=integerToBigInt(settings?.customerRatePaisa);

@@ -13,6 +13,8 @@ const indexes: Record<string, IndexDescription[]> = {
   customers: [{ key: { code: 1 }, unique: true }, { key: { active: 1, customerType: 1, deliverySequence: 1, name: 1 } }, { key: { phone: 1 } }],
   customer_rate_history: [{ key: { customerId: 1, effectiveFrom: -1 } }],
   products: [{ key: { sku: 1 }, unique: true }, { key: { active: 1, name: 1 } }],
+  product_rate_history: [{ key: { productSku: 1, effectiveFrom: -1 } }, { key: { sourceTransactionNo: 1, productSku: 1 }, unique: true, partialFilterExpression: { sourceTransactionNo: { $type: "string" } } }],
+  inventory_receipts: [{ key: { transactionNo: 1 }, unique: true }, { key: { idempotencyKey: 1 }, unique: true }, { key: { businessDate: -1, status: 1 } }, { key: { "lines.productSku": 1, businessDate: -1 } }, { key: { supplierReference: 1 }, partialFilterExpression: { supplierReference: { $type: "string" } } }],
   procurement_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1, shift: 1 } }],
   milk_purchases: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { vendorId: 1, businessDate: 1, shift: 1 }, unique: true, partialFilterExpression: { status: "posted" } }],
   delivery_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: 1 }, unique: true, partialFilterExpression: { status: "posted" } }],
@@ -79,9 +81,24 @@ async function assertNoDuplicateDailyHistory() {
   if (duplicateCustomer) throw new Error("A customer has duplicate posted delivery history for one date; review it before rerunning migration.");
 }
 
+async function migrateProductInventoryRules() {
+  const now=new Date();
+  const configurations=[
+    {sku:"MILK-001",name:"Fresh Milk",unit:"liter",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"},
+    {sku:"YOG-001",name:"Yogurt / Dahi",unit:"kilogram",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
+    {sku:"BREAD-001",name:"Bread",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
+    {sku:"EGG-001",name:"Eggs",unit:"tray",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
+    {sku:"ISPAGHOL-001",name:"Ispaghol / Psyllium Husk",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
+    {sku:"KUNDA-001",name:"Kunda Dahi",unit:"pot",category:"internal",active:true,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true},
+    {sku:"GL-001",name:"Gold Leaf",unit:"packet",category:"disabled",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false},
+  ];
+  for(const configuration of configurations){const{sku,...flags}=configuration;await database.collection("products").updateOne({sku},{$set:{...flags,updatedAt:now},$setOnInsert:{sku,stockMilli:0,averageCostPaisa:0,retailRatePaisa:0,lowStockMilli:0,createdAt:now}},{upsert:true});}
+}
+
 async function main() {
   await removeObsoleteDeliveryGrouping();
   await assertNoDuplicateDailyHistory();
+  await migrateProductInventoryRules();
   for (const [name, definitions] of Object.entries(indexes)) {
     for (const definition of definitions) await database.collection(name).createIndex(definition.key, definition);
   }

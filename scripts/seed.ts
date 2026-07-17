@@ -26,18 +26,19 @@ async function main() {
     { upsert: true },
   );
 
-  const products: [string, string, string, string, number][] = [
-    ["MILK-001", "Fresh Milk", "liter", "dairy", 20000],
-    ["YOG-001", "Yogurt / Dahi", "kilogram", "dairy", 24000],
-    ["KUNDA-001", "Kunda Dahi", "pot", "dairy", 30000],
-    ["BREAD-001", "Bread packets", "packet", "retail", 12000],
-    ["EGG-001", "Eggs", "tray", "retail", 48000],
-    ["GL-001", "Gold Leaf packs", "packet", "retail", 52000],
+  const products: [string, string, string, string, number, Record<string,boolean|string>][] = [
+    ["MILK-001", "Fresh Milk", "liter", "dairy", 20000, {inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"}],
+    ["YOG-001", "Yogurt / Dahi", "kilogram", "dairy", 24000, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false}],
+    ["BREAD-001", "Bread", "packet", "retail", 12000, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false}],
+    ["EGG-001", "Eggs", "tray", "retail", 48000, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false}],
+    ["ISPAGHOL-001", "Ispaghol / Psyllium Husk", "packet", "retail", 0, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false}],
+    ["KUNDA-001", "Kunda Dahi", "pot", "internal", 0, {inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true}],
+    ["GL-001", "Gold Leaf", "packet", "disabled", 0, {inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false}],
   ];
-  for (const [sku, productName, unit, category, rate] of products) {
+  for (const [sku, productName, unit, category, rate, flags] of products) {
     await database.collection("products").updateOne(
       { sku },
-      { $setOnInsert: { sku, name: productName, unit, category, retailRatePaisa: Long.fromNumber(rate), stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.fromNumber(5000), active: true, createdAt: now, updatedAt: now } },
+      { $setOnInsert: { sku, name: productName, unit, category, retailRatePaisa: Long.fromNumber(rate), stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.fromNumber(5000), active: sku!=="GL-001", ...flags, createdAt: now, updatedAt: now } },
       { upsert: true },
     );
   }

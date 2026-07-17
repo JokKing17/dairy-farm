@@ -4,6 +4,7 @@ import { calculateDeliveryCharge } from "../delivery-calculations";
 import { transaction } from "../db";
 import { transactionNo } from "../ids";
 import { integerToBigInt, quantityToMilli } from "../money";
+import { isDailyDeliveryProduct } from "../product-eligibility";
 
 const productInput = z.object({ sku: z.string().min(1).max(30), quantity: z.string().max(20) });
 export const deliveryInputSchema = z.object({
@@ -68,22 +69,23 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
 
       const pricedProducts = line.products.filter((item) => item.quantity.trim() && item.quantity !== "0").map((item) => {
         const product = products.get(item.sku);
-        if (!product || item.sku === "MILK-001") throw new Error(`Product ${item.sku} is unavailable.`);
-        return { sku: item.sku, quantity: item.quantity, ratePaisa: integerToBigInt(product.retailRatePaisa) };
+        if (item.sku === "MILK-001" || !isDailyDeliveryProduct(product)) throw new Error(`${String(product?.name ?? item.sku)} is out of stock or unavailable for daily delivery.`);
+        return { sku: item.sku, quantity: item.quantity, ratePaisa: integerToBigInt(product.retailRatePaisa), costPaisa: integerToBigInt(product.averageCostPaisa) };
       });
       const calculation = calculateDeliveryCharge({ deliveryStatus: line.deliveryStatus, milkQuantity: line.milkQuantity || "0", milkRatePaisa: ratePaisa, products: pricedProducts });
       if (wasDelivered && calculation.milkQuantityMilli <= 0n && calculation.otherAmountPaisa <= 0n) throw new Error(`Enter a delivered quantity for ${String(customer.name)}.`);
 
       const snapshottedProducts = pricedProducts.map((item) => {
         const quantityMilli = quantityToMilli(item.quantity);
-        const amountPaisa = (quantityMilli * item.ratePaisa + 500n) / 1000n;
+        const amountPaisa = (quantityMilli * item.ratePaisa + 500n) / 1000n, costOfGoodsSoldPaisa=(quantityMilli*item.costPaisa+500n)/1000n;
         inventoryRequired.set(item.sku, (inventoryRequired.get(item.sku) ?? 0n) + quantityMilli);
-        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: item.sku, location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-quantityMilli), unitRatePaisa: Long.fromBigInt(item.ratePaisa), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
-        return { sku: item.sku, quantityMilli: Long.fromBigInt(quantityMilli), ratePaisa: Long.fromBigInt(item.ratePaisa), amountPaisa: Long.fromBigInt(amountPaisa) };
+        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: item.sku, location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-quantityMilli), unitSaleRatePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa:Long.fromBigInt(item.costPaisa),revenuePaisa:Long.fromBigInt(amountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(costOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(amountPaisa-costOfGoodsSoldPaisa), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
+        return { sku: item.sku, quantityMilli: Long.fromBigInt(quantityMilli), ratePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa:Long.fromBigInt(item.costPaisa),amountPaisa: Long.fromBigInt(amountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(costOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(amountPaisa-costOfGoodsSoldPaisa) };
       });
       if (calculation.milkQuantityMilli > 0n) {
         inventoryRequired.set("MILK-001", (inventoryRequired.get("MILK-001") ?? 0n) + calculation.milkQuantityMilli);
-        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: "MILK-001", location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-calculation.milkQuantityMilli), unitRatePaisa: Long.fromBigInt(ratePaisa), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
+        const milkCost=integerToBigInt(products.get("MILK-001")?.averageCostPaisa),milkCogs=(calculation.milkQuantityMilli*milkCost+500n)/1000n;
+        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: "MILK-001", location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-calculation.milkQuantityMilli), unitSaleRatePaisa: Long.fromBigInt(ratePaisa),unitCostPaisa:Long.fromBigInt(milkCost),revenuePaisa:Long.fromBigInt(calculation.milkAmountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(milkCogs),grossProfitPaisa:Long.fromBigInt(calculation.milkAmountPaisa-milkCogs), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
       }
 
       const lineNo = index + 1;
@@ -98,11 +100,12 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
       const result = await database.collection("products").updateOne({ sku, active: true, stockMilli: { $gte: Long.fromBigInt(required) } }, { $inc: { stockMilli: Long.fromBigInt(-required) }, $set: { updatedAt: now, updatedBy: actorId } }, { session });
       if (!result.modifiedCount) throw new Error(`Not enough ${String(products.get(sku)?.name ?? sku)} stock for today's deliveries.`);
     }
-    await database.collection("delivery_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
+    const totalCostOfGoodsSoldPaisa=inventoryDocuments.reduce((sum,movement)=>sum+integerToBigInt(movement.costOfGoodsSoldPaisa),0n),grossProfitPaisa=totalAmountPaisa-totalCostOfGoodsSoldPaisa;
+    await database.collection("delivery_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(totalCostOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(grossProfitPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
     await database.collection("customer_deliveries").insertMany(deliveryDocuments, { session });
     if (ledgerDocuments.length) await database.collection("party_ledger_entries").insertMany(ledgerDocuments, { session });
     if (inventoryDocuments.length) await database.collection("inventory_movements").insertMany(inventoryDocuments, { session });
-    await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
+    await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(totalCostOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(grossProfitPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
     if (skippedCustomers > 0) await database.collection("notifications").insertOne({ title: "Today's household deliveries are incomplete.", message: `${skippedCustomers} customer${skippedCustomers === 1 ? " was" : "s were"} skipped or paused.`, severity: "warning", status: "open", relatedType: "daily_delivery_batch", relatedId: number, relatedHref: "/deliveries", createdAt: now, createdBy: actorId }, { session });
     await database.collection("audit_logs").insertOne({ actorId, action: "post", entity: "daily_delivery_batch", entityId: number, metadata: { businessDate: input.businessDate, deliveredCustomers, skippedCustomers }, createdAt: now }, { session });
     const result = { transactionNo: number, deliveredCustomers, skippedCustomers, totalMilkMilli: totalMilkMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };
