@@ -17,6 +17,15 @@ export function calculateProductionLoss(milkInputMilli:bigint,yogurtOutputMilli:
 export function calculateActualYield(milkInputMilli:bigint,yogurtOutputMilli:bigint){if(milkInputMilli<=0n||yogurtOutputMilli<=0n)return 0n;return(yogurtOutputMilli*1000n+milkInputMilli/2n)/milkInputMilli}
 export function calculateYieldVariance(milkInputMilli:bigint,actualOutputMilli:bigint,milkRatioParts:bigint,yogurtRatioParts:bigint){const expected=calculateAutomaticYogurtOutput(milkInputMilli,milkRatioParts,yogurtRatioParts);return{standardExpectedYogurtMilli:expected,yieldVarianceMilli:actualOutputMilli-expected,actualYieldMilli:calculateActualYield(milkInputMilli,actualOutputMilli)}}
 export function calculateKundaOutput(entries:KundaCalculationInput[]){return entries.reduce((total,entry)=>{if(entry.sizeMilliKg<=0n||!Number.isSafeInteger(entry.numberOfKundas)||entry.numberOfKundas<0)throw new Error("Kunda size and count must be valid.");return total+entry.sizeMilliKg*BigInt(entry.numberOfKundas)},0n)}
+export function suggestKundaBreakdown(yogurtMilli:bigint){
+  if(yogurtMilli<0n)throw new Error("Yogurt quantity cannot be negative.");
+  let best={threeKg:0,threePointFiveKg:0,looseMilli:yogurtMilli,containers:0};
+  for(let threePointFiveKg=0;BigInt(threePointFiveKg)*3500n<=yogurtMilli;threePointFiveKg++){
+    const remaining=yogurtMilli-BigInt(threePointFiveKg)*3500n,threeKg=Number(remaining/3000n),looseMilli=remaining-BigInt(threeKg)*3000n,containers=threePointFiveKg+threeKg;
+    if(looseMilli<best.looseMilli||(looseMilli===best.looseMilli&&containers<best.containers)||(looseMilli===best.looseMilli&&containers===best.containers&&threePointFiveKg>best.threePointFiveKg))best={threeKg,threePointFiveKg,looseMilli,containers};
+  }
+  return best;
+}
 export function convertMilkWeightToInventoryQuantity(milkWeightMilli:bigint,inventoryUnit:"liter"|"kilogram",densityMilliKgPerLiter?:bigint){if(inventoryUnit==="kilogram")return milkWeightMilli;if(!densityMilliKgPerLiter||densityMilliKgPerLiter<=0n)throw new Error("Set Milk density in Business Settings before producing Yogurt.");return ceilRatio(milkWeightMilli,1000n,densityMilliKgPerLiter)}
 
 export function calculateYogurtProduction(input:{milkWeightMilli:bigint;milkInventoryQuantityMilli:bigint;milkAverageCostPaisa:bigint;actualOutputMilli:bigint;kundaEntries:KundaCalculationInput[];looseYogurtMilli:bigint;additionalCostsPaisa:bigint[];sellingRatePaisa:bigint;milkRatioParts:bigint;yogurtRatioParts:bigint}){

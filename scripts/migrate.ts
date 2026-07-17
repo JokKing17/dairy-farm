@@ -20,6 +20,7 @@ const indexes: Record<string, IndexDescription[]> = {
   delivery_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: 1 }, unique: true, partialFilterExpression: { status: "posted" } }],
   customer_deliveries: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { customerId: 1, businessDate: 1 }, unique: true, partialFilterExpression: { status: "posted" } }, { key: { businessDate: -1, deliveryStatus: 1 } }],
   sales: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1 } }],
+  yogurt_packaging_movements: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { kundaSizeMilliKg: 1, status: 1 } }, { key: { productionBatchNo: 1, status: 1 } }],
   expenses: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1, status: 1 } }],
   production_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { idempotencyKey: 1 }, unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } }, { key: { businessDate: -1, status: 1 } }, { key: { yogurtProductSku: 1, businessDate: -1 } }],
   payments: [{ key: { transactionNo: 1 }, unique: true }, { key: { partyType: 1, partyId: 1, businessDate: -1 } }],
@@ -102,6 +103,14 @@ async function migrateYogurtProductionSettingsAndHistory(){
   await database.collection("production_batches").updateMany({productionMode:{$exists:false}},{$set:{productionMode:"legacy",calculationDirection:"legacy",legacyCalculation:true}});
 }
 
+async function migrateCustomerTypes() {
+  const customers = database.collection("customers");
+  await customers.updateMany(
+    { customerType: "party" },
+    [{ $set: { legacyCustomerType: { $ifNull: ["$legacyCustomerType", "$customerType"] }, customerType: "shop", updatedAt: new Date() } }],
+  );
+}
+
 async function removeObsoleteInventoryMovementIndexes() {
   const collection = database.collection("inventory_movements");
   const existingIndexes = await collection.indexes().catch(() => []);
@@ -117,6 +126,7 @@ async function main() {
   await removeObsoleteDeliveryGrouping();
   await assertNoDuplicateDailyHistory();
   await migrateProductInventoryRules();
+  await migrateCustomerTypes();
   await migrateYogurtProductionSettingsAndHistory();
   await removeObsoleteInventoryMovementIndexes();
   for (const [name, definitions] of Object.entries(indexes)) {
