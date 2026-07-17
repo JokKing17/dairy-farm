@@ -44,7 +44,7 @@ async function main() {
   }
   await database.collection("business_settings").updateOne(
     { _id: "default" as never },
-    { $setOnInsert: { businessName: "DairyFlow Milk & Yogurt", currency: "PKR", timezone: "Asia/Karachi", invoicePrefix: "DF", costingMethod: "moving-weighted-average", createdAt: now, updatedAt: now } },
+    { $setOnInsert: { businessName: "DairyFlow Milk & Yogurt", currency: "PKR", timezone: "Asia/Karachi", invoicePrefix: "DF", costingMethod: "moving-weighted-average", yogurtAutomaticMilkRatioParts:40,yogurtAutomaticOutputRatioParts:34,yogurtAutomaticYieldMilli:850,yogurtAutomaticLossMilli:150,yogurtYieldToleranceMilli:20,yogurtDefaultProductionMode:"automatic",yogurtMilkInputUnit:"kilogram",milkInventoryUnit:"liter",createdAt: now, updatedAt: now } },
     { upsert: true },
   );
   console.log(`Seed complete. Owner: ${ownerEmail}`);

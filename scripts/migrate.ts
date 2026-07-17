@@ -95,10 +95,18 @@ async function migrateProductInventoryRules() {
   for(const configuration of configurations){const{sku,...flags}=configuration;await database.collection("products").updateOne({sku},{$set:{...flags,updatedAt:now},$setOnInsert:{sku,stockMilli:0,averageCostPaisa:0,retailRatePaisa:0,lowStockMilli:0,createdAt:now}},{upsert:true});}
 }
 
+async function migrateYogurtProductionSettingsAndHistory(){
+  const settings=database.collection("business_settings"),defaults:Record<string,unknown>={yogurtAutomaticMilkRatioParts:40,yogurtAutomaticOutputRatioParts:34,yogurtAutomaticYieldMilli:850,yogurtAutomaticLossMilli:150,yogurtYieldToleranceMilli:20,yogurtDefaultProductionMode:"automatic",yogurtMilkInputUnit:"kilogram",milkInventoryUnit:"liter"};
+  await settings.updateOne({_id:"default" as never},{$setOnInsert:{createdAt:new Date(),updatedAt:new Date()}},{upsert:true});
+  for(const[field,value]of Object.entries(defaults))await settings.updateOne({_id:"default" as never,[field]:{$exists:false}},{$set:{[field]:value,updatedAt:new Date()}},{upsert:false});
+  await database.collection("production_batches").updateMany({productionMode:{$exists:false}},{$set:{productionMode:"legacy",calculationDirection:"legacy",legacyCalculation:true}});
+}
+
 async function main() {
   await removeObsoleteDeliveryGrouping();
   await assertNoDuplicateDailyHistory();
   await migrateProductInventoryRules();
+  await migrateYogurtProductionSettingsAndHistory();
   for (const [name, definitions] of Object.entries(indexes)) {
     for (const definition of definitions) await database.collection(name).createIndex(definition.key, definition);
   }

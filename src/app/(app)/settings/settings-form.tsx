@@ -8,6 +8,9 @@ const fields = [
   ["Receipt prefix", "invoicePrefix"], ["Closing time", "closingTime"],
   ["Allowed backdate days", "allowedBackdateDays"],
   ["Customer milk rate", "customerRate"], ["Shop milk rate", "shopRate"],
+  ["Yogurt Milk ratio parts", "yogurtAutomaticMilkRatioParts"],
+  ["Yogurt output ratio parts", "yogurtAutomaticOutputRatioParts"],
+  ["Yield tolerance (milli; 20 = 2 points)", "yogurtYieldToleranceMilli"],
 ] as const;
 
 export function SettingsForm({ settings }: { settings: Record<string, string | number> }) {
@@ -19,6 +22,9 @@ export function SettingsForm({ settings }: { settings: Record<string, string | n
       <label htmlFor={name}>{label}</label>
       <input id={name} name={name} defaultValue={settings[name] ?? ""} required />
     </div>)}
+    <div className="field"><label htmlFor="yogurtDefaultProductionMode">Default Yogurt production mode</label><select id="yogurtDefaultProductionMode" name="yogurtDefaultProductionMode" defaultValue={settings.yogurtDefaultProductionMode}><option value="automatic">Automatic</option><option value="manual">Manual</option></select></div>
+    <div className="field"><label htmlFor="milkInventoryUnit">Fresh Milk inventory unit</label><select id="milkInventoryUnit" name="milkInventoryUnit" defaultValue={settings.milkInventoryUnit}><option value="liter">Liter</option><option value="kilogram">Kilogram</option></select></div>
+    <div className="field"><label htmlFor="milkDensityMilliKgPerLiter">Milk density (kg per liter; required for liter inventory)</label><input id="milkDensityMilliKgPerLiter" name="milkDensityMilliKgPerLiter" defaultValue={settings.milkDensityMilliKgPerLiter}/></div>
     <input type="hidden" name="currency" value="PKR" />
     <button className="button" disabled={pending}>{pending ? "Saving..." : "Save settings"}</button>
   </form>;

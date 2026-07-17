@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe,expect,it } from "vitest";
 import { inventoryReceiptLine,isEligibleManualReceiptProduct,isManualReceiptSku,MANUAL_RECEIPT_SKUS,movingWeightedAverage } from "./inventory-calculations";
 import { DAILY_DELIVERY_CATALOG_SKUS,isDailyDeliveryCatalogProduct,isDailyDeliveryProduct } from "./product-eligibility";
-import { calculateKundaOutput,calculateYogurtProduction } from "./yogurt-production-calculations";
+import { calculateActualYield,calculateAutomaticMilkRequirement,calculateAutomaticYogurtOutput,calculateKundaOutput,calculateProductionLoss,calculateYogurtProduction,ceilRatio,convertMilkWeightToInventoryQuantity,floorRatio,YOGURT_PRODUCTION_DEFAULTS } from "./yogurt-production-calculations";
 
 const eligible=(sku:string)=>({sku,active:true,inventoryManaged:true,allowManualStockReceipt:true,internalOnly:false});
 describe("inventory receiving business rules",()=>{
@@ -27,14 +27,24 @@ describe("inventory receiving business rules",()=>{
 });
 
 describe("Yogurt production",()=>{
-  const calculation=()=>calculateYogurtProduction({milkUsedMilli:10000n,milkAverageCostPaisa:20000n,kundaEntries:[{sizeMilliKg:3000n,numberOfKundas:2},{sizeMilliKg:3500n,numberOfKundas:1}],looseYogurtMilli:500n,additionalCostsPaisa:[10000n,5000n],sellingRatePaisa:30000n});
+  const calculation=()=>calculateYogurtProduction({milkWeightMilli:10000n,milkInventoryQuantityMilli:10000n,milkAverageCostPaisa:20000n,actualOutputMilli:8500n,kundaEntries:[{sizeMilliKg:3000n,numberOfKundas:1},{sizeMilliKg:3500n,numberOfKundas:1}],looseYogurtMilli:2000n,additionalCostsPaisa:[10000n,5000n],sellingRatePaisa:30000n,milkRatioParts:40n,yogurtRatioParts:34n});
+  it("uses the corrected default 40:34 ratio",()=>expect(YOGURT_PRODUCTION_DEFAULTS).toMatchObject({milkRatioParts:40n,yogurtRatioParts:34n,standardYieldMilli:850n,standardLossMilli:150n}));
+  it.each([[40000n,34000n],[20000n,17000n],[10000n,8500n],[5000n,4250n]])("converts %s Milk into %s Yogurt", (milk,output)=>expect(calculateAutomaticYogurtOutput(milk,40n,34n)).toBe(output));
+  it("records 6 kg processing loss for 40 kg Milk",()=>expect(calculateProductionLoss(40000n,calculateAutomaticYogurtOutput(40000n,40n,34n))).toBe(6000n));
+  it.each([[34000n,40000n],[17000n,20000n],[3000n,3530n],[3500n,4118n]])("requires %s Yogurt from %s Milk with upward rounding",(output,milk)=>expect(calculateAutomaticMilkRequirement(output,40n,34n)).toBe(milk));
+  it("rounds automatic output down and required Milk up",()=>{expect(floorRatio(1001n,34n,40n)).toBe(850n);expect(ceilRatio(3000n,40n,34n)).toBe(3530n)});
+  it("converts Milk kilograms to liter inventory only with a density snapshot",()=>{expect(convertMilkWeightToInventoryQuantity(40000n,"liter",1030n)).toBe(38835n);expect(()=>convertMilkWeightToInventoryQuantity(40000n,"liter")).toThrow("Milk density")});
+  it("does not convert Milk when inventory is configured in kilograms",()=>expect(convertMilkWeightToInventoryQuantity(40000n,"kilogram")).toBe(40000n));
   it("calculates 3 kg, 3.5 kg and custom Kunda weight",()=>expect(calculateKundaOutput([{sizeMilliKg:3000n,numberOfKundas:2},{sizeMilliKg:3500n,numberOfKundas:1},{sizeMilliKg:2750n,numberOfKundas:2}])).toBe(15000n));
-  it("includes loose Yogurt in actual output",()=>expect(calculation().actualOutputMilli).toBe(10000n));
+  it("includes loose Yogurt in actual output",()=>expect(calculation().actualOutputMilli).toBe(8500n));
   it("transfers Milk material cost into Yogurt cost",()=>expect(calculation().milkMaterialCostPaisa).toBe(200000n));
   it("includes additional costs in total production cost",()=>expect(calculation().totalProductionCostPaisa).toBe(215000n));
-  it("calculates Yogurt unit cost with integer arithmetic",()=>expect(calculation().yogurtUnitCostPaisa).toBe(21500n));
-  it("calculates estimated revenue, profit and yield without creating revenue",()=>expect(calculation()).toMatchObject({estimatedRevenuePaisa:300000n,estimatedGrossProfitPaisa:85000n,yieldMilli:1000n}));
+  it("calculates Yogurt unit cost with integer arithmetic",()=>expect(calculation().yogurtUnitCostPaisa).toBe(25294n));
+  it("calculates actual yield and loss",()=>{expect(calculateActualYield(40000n,33000n)).toBe(825n);expect(calculateProductionLoss(40000n,33000n)).toBe(7000n)});
+  it("calculates estimated revenue and profit without creating revenue",()=>expect(calculation()).toMatchObject({estimatedRevenuePaisa:255000n,estimatedGrossProfitPaisa:40000n,actualYieldMilli:850n,processingLossMilli:1500n}));
+  it("rejects Kunda and loose totals that do not reconcile",()=>expect(()=>calculateYogurtProduction({milkWeightMilli:40000n,milkInventoryQuantityMilli:40000n,milkAverageCostPaisa:1n,actualOutputMilli:33000n,kundaEntries:[{sizeMilliKg:3000n,numberOfKundas:10}],looseYogurtMilli:0n,additionalCostsPaisa:[],sellingRatePaisa:1n,milkRatioParts:40n,yogurtRatioParts:34n})).toThrow("do not match"));
   it("uses an atomic, idempotent production transaction",()=>{const source=readFileSync(resolve("src/lib/services/yogurt-production.ts"),"utf8");expect(source).toContain("return transaction");expect(source).toContain('operation:"yogurt_production"');expect(source).toContain("idempotencyKey")});
+  it("requires server-validated modes, variance reasons and settings snapshots",()=>{const source=readFileSync(resolve("src/lib/services/yogurt-production.ts"),"utf8");for(const value of ["productionMode","calculationDirection","yieldToleranceMilli","varianceReason","milkDensitySnapshot","convertedMilkInventoryQuantityMilli"])expect(source).toContain(value)});
   it("reduces Milk and increases only Yogurt inventory",()=>{const source=readFileSync(resolve("src/lib/services/yogurt-production.ts"),"utf8");expect(source).toContain('"yogurt-production-consumption"');expect(source).toContain('"yogurt-production-output"');expect(source).not.toContain('productSku:"KUNDA-001"')});
   it("stores production rate history and historical snapshots",()=>{const source=readFileSync(resolve("src/lib/services/yogurt-production.ts"),"utf8");expect(source).toContain("product_rate_history");expect(source).toContain("previousYogurtSellingRatePaisa")});
   it("supports safe reversal and rejects consumed output",()=>{const source=readFileSync(resolve("src/lib/services/yogurt-production.ts"),"utf8");expect(source).toContain("cannot be reversed safely");expect(source).toContain("yogurt-production-reversal")});
