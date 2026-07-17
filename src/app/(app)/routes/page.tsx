@@ -1,1 +1,0 @@
-import{DatabaseModulePage}from"@/components/database-module-page";export const dynamic="force-dynamic";export default function Page(){return <DatabaseModulePage title="Routes" description="Live delivery routes stored in MongoDB." collection="routes" columns={[["Code","code"],["Route","name"],["Delivery person","deliveryPerson"],["Status","active"]]}/>}

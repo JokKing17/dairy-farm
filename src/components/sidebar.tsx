@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, ChartNoAxesCombined, Factory, LayoutDashboard, Milk, ReceiptText, Route, Settings, ShoppingBasket, Truck, Users, WalletCards, Warehouse, Zap } from "lucide-react";
+import { Bell, ChartNoAxesCombined, Factory, LayoutDashboard, Milk, ReceiptText, Settings, ShoppingBasket, Truck, Users, WalletCards, Warehouse, Zap } from "lucide-react";
 
 const groups = [
   { name: "Workspace", items: [["Dashboard", "/dashboard", LayoutDashboard], ["Quick Entry", "/quick-entry", Zap]] },
-  { name: "Operations", items: [["Vendors", "/vendors", Truck], ["Customers", "/customers", Users], ["Routes", "/routes", Route], ["Shop Sales", "/sales", ShoppingBasket], ["Inventory", "/inventory", Warehouse], ["Production", "/production", Factory]] },
+  { name: "Operations", items: [["Vendors", "/vendors", Truck], ["Customers", "/customers", Users], ["Daily Deliveries", "/deliveries", Milk], ["Shop Sales", "/sales", ShoppingBasket], ["Inventory", "/inventory", Warehouse], ["Production", "/production", Factory]] },
   { name: "Finance", items: [["Expenses", "/expenses", ReceiptText], ["Cash & Ledgers", "/cashbook", WalletCards], ["Reports", "/reports", ChartNoAxesCombined]] },
   { name: "System", items: [["Notifications", "/notifications", Bell], ["Settings", "/settings", Settings]] },
 ] as const;

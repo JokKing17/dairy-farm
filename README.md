@@ -4,7 +4,7 @@ Private dairy business operations and accounting system built with Next.js, Type
 
 ## Architecture
 
-- `src/app`: App Router screens and protected API routes
+- `src/app`: App Router screens and protected API handlers
 - `src/lib/services`: transactional posting services and idempotency enforcement
 - `src/lib/db.ts`: reusable MongoDB connection and transaction wrapper
 - `src/lib/money.ts`: exact PKR and quantity calculations
