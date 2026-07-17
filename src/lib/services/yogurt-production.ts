@@ -15,6 +15,11 @@ export const yogurtProductionSchema=z.object({
 });
 export type YogurtProductionInput=z.infer<typeof yogurtProductionSchema>;
 const duplicate=(error:unknown)=>Boolean(error&&typeof error==="object"&&"code" in error&&error.code===11000);
+const duplicateIdempotencyKey=(error:unknown)=>{
+  if(!duplicate(error)||!error||typeof error!=="object")return false;
+  const keyPattern="keyPattern" in error&&error.keyPattern&&typeof error.keyPattern==="object"?error.keyPattern:null;
+  return Boolean(keyPattern&&("idempotencyKey" in keyPattern||"key" in keyPattern));
+};
 function parsedKundas(input:YogurtProductionInput){return input.kundas.filter(entry=>entry.count>0).map(entry=>{const sizeMilliKg=quantityToMilli(entry.size==="custom"?(entry.customSize??""):entry.size);return{sizeMilliKg,numberOfKundas:entry.count,totalWeightMilliKg:sizeMilliKg*BigInt(entry.count),notes:entry.notes||null,sizeType:entry.size}})}
 
 export async function postYogurtProduction(raw:YogurtProductionInput,actorId:string){
@@ -47,7 +52,7 @@ export async function postYogurtProduction(raw:YogurtProductionInput,actorId:str
   await database.collection("financial_transactions").insertOne({transactionNo:number,kind:"yogurt_production",amountPaisa:Long.fromBigInt(calculated.totalProductionCostPaisa),materialCostPaisa:Long.fromBigInt(calculated.milkMaterialCostPaisa),processingCostPaisa:Long.fromBigInt(calculated.additionalCostPaisa),businessDate:input.businessDate,status:"posted",createdAt:now,createdBy:actorId},{session});if(input.processingPaymentMethod&&calculated.additionalCostPaisa>0n)await database.collection("cashbook_entries").insertOne({transactionNo:number,lineNo:1,businessDate:input.businessDate,account:input.processingPaymentMethod,direction:"out",amountPaisa:Long.fromBigInt(calculated.additionalCostPaisa),description:`Yogurt processing costs ${number}`,sourceType:"yogurt_production",status:"posted",createdAt:now,createdBy:actorId},{session});
   await database.collection("audit_logs").insertOne({actorId,action:"post",entity:"yogurt_production",entityId:number,metadata:{productionMode:input.productionMode,milkWeightMilli:enteredMilkWeightMilli.toString(),milkInventoryQuantityMilli:convertedMilkInventoryQuantityMilli.toString(),yogurtOutputMilli:actualYogurtOutputMilli.toString(),processingLossMilli:calculated.processingLossMilli.toString()},createdAt:now},{session});
   const result={transactionNo:number,milkUsedMilli:enteredMilkWeightMilli.toString(),yogurtOutputMilli:actualYogurtOutputMilli.toString(),yogurtUnitCostPaisa:calculated.yogurtUnitCostPaisa.toString(),estimatedGrossProfitPaisa:calculated.estimatedGrossProfitPaisa.toString()};await database.collection("idempotency_records").insertOne({key:input.idempotencyKey,operation:"yogurt_production",result,createdAt:now},{session});return result;
- }).catch(error=>{if(duplicate(error))throw new Error("This Yogurt batch was already saved. Refresh to see it in history.");throw error});
+ }).catch(error=>{if(duplicateIdempotencyKey(error))throw new Error("This Yogurt batch was already saved. Refresh to see it in history.");throw error});
 }
 
 export async function reverseYogurtProduction(transactionNumber:string,reason:string,actorId:string){

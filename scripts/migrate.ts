@@ -102,11 +102,23 @@ async function migrateYogurtProductionSettingsAndHistory(){
   await database.collection("production_batches").updateMany({productionMode:{$exists:false}},{$set:{productionMode:"legacy",calculationDirection:"legacy",legacyCalculation:true}});
 }
 
+async function removeObsoleteInventoryMovementIndexes() {
+  const collection = database.collection("inventory_movements");
+  const existingIndexes = await collection.indexes().catch(() => []);
+  for (const index of existingIndexes) {
+    const fields = Object.keys(index.key ?? {});
+    if (index.name !== "_id_" && index.unique && fields.length === 1 && fields[0] === "transactionNo") {
+      await collection.dropIndex(index.name!);
+    }
+  }
+}
+
 async function main() {
   await removeObsoleteDeliveryGrouping();
   await assertNoDuplicateDailyHistory();
   await migrateProductInventoryRules();
   await migrateYogurtProductionSettingsAndHistory();
+  await removeObsoleteInventoryMovementIndexes();
   for (const [name, definitions] of Object.entries(indexes)) {
     for (const definition of definitions) await database.collection(name).createIndex(definition.key, definition);
   }
