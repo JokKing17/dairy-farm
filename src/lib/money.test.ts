@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { cashClosing, formatMilli, formatPKR, milkReconciliation, multiplyQuantityRate, quantityToMilli, rupeesToPaisa } from "./money";
+import { Long } from "mongodb";
+import { cashClosing, formatMilli, formatPKR, integerToBigInt, milkReconciliation, multiplyQuantityRate, quantityToMilli, rupeesToPaisa } from "./money";
 
 describe("exact business calculations", () => {
   it("stores money as integer paisa", () => expect(rupeesToPaisa("10800.50")).toBe(1080050n));
+  it("normalizes MongoDB aggregation integers returned as Long or number", () => {
+    expect(integerToBigInt(Long.fromNumber(12480000))).toBe(12480000n);
+    expect(integerToBigInt(12480000)).toBe(12480000n);
+  });
   it("formats values above Number.MAX_SAFE_INTEGER without precision loss", () => expect(formatPKR(900719925474099312n)).toBe("PKR 9,007,199,254,740,993.12"));
   it("normalizes and formats quantities without Number", () => {
     expect(quantityToMilli("60.125")).toBe(60125n);

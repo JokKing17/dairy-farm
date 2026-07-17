@@ -2,7 +2,7 @@ import { Decimal128, Long, ObjectId } from "mongodb";
 import { z } from "zod";
 import { transaction } from "../db";
 import { transactionNo } from "../ids";
-import { multiplyQuantityRate, quantityToMilli, rupeesToPaisa } from "../money";
+import { integerToBigInt, multiplyQuantityRate, quantityToMilli, rupeesToPaisa } from "../money";
 
 export const procurementInputSchema = z.object({
   businessDate: z.iso.date(),
@@ -59,7 +59,7 @@ export async function postProcurementBatch(rawInput: ProcurementInput, actorId: 
       const effectiveAt = new Date(`${input.businessDate}T23:59:59.999Z`);
       const rateRecord = await database.collection("vendor_rate_history").findOne({ vendorId, effectiveFrom: { $lte: effectiveAt }, $or: [{ effectiveTo: null }, { effectiveTo: { $gt: effectiveAt } }] }, { session, sort: { effectiveFrom: -1 } });
       if (!rateRecord?.ratePaisa) throw new Error(`${String(vendor.name)} has no milk rate for this date.`);
-      let ratePaisa = (rateRecord.ratePaisa as Long).toBigInt();
+      let ratePaisa = integerToBigInt(rateRecord.ratePaisa);
       if (line.overrideRate?.trim()) {
         const requested = rupeesToPaisa(line.overrideRate);
         if (requested !== ratePaisa) {
@@ -84,8 +84,8 @@ export async function postProcurementBatch(rawInput: ProcurementInput, actorId: 
     await database.collection("inventory_movements").insertMany(stockLines, { session });
     const milk = await database.collection("products").findOne({ sku: "MILK-001" }, { session });
     if (!milk) throw new Error("Fresh Milk is not initialized. Run the seed command.");
-    const oldStock = (milk.stockMilli as Long | undefined)?.toBigInt() ?? 0n;
-    const oldCost = (milk.averageCostPaisa as Long | undefined)?.toBigInt() ?? 0n;
+    const oldStock = integerToBigInt(milk.stockMilli);
+    const oldCost = integerToBigInt(milk.averageCostPaisa);
     const newStock = oldStock + totalQuantityMilli;
     const averageCost = newStock > 0n ? (oldStock * oldCost + totalAmountPaisa * 1000n) / newStock : 0n;
     await database.collection("products").updateOne({ _id: milk._id }, { $set: { stockMilli: Long.fromBigInt(newStock), averageCostPaisa: Long.fromBigInt(averageCost), updatedAt: now, updatedBy: actorId } }, { session });

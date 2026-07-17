@@ -1,5 +1,23 @@
 export type Paisa = bigint;
 
+/** Normalize MongoDB Longs and aggregation results across Node/serverless runtimes. */
+export function integerToBigInt(value: unknown, fallback = 0n): bigint {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) throw new Error("Stored integer exceeds JavaScript's safe range");
+    return BigInt(value);
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  if (value && typeof value === "object" && "toBigInt" in value && typeof value.toBigInt === "function") {
+    return value.toBigInt() as bigint;
+  }
+  if (value && typeof value === "object" && "toString" in value) {
+    const text = value.toString();
+    if (/^-?\d+$/.test(text)) return BigInt(text);
+  }
+  return fallback;
+}
+
 export function rupeesToPaisa(value: string | number): Paisa {
   const normalized = String(value).replace(/,/g, "").trim();
   if (!/^-?\d+(\.\d{1,2})?$/.test(normalized)) throw new Error("Invalid money amount");

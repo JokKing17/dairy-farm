@@ -1,6 +1,5 @@
-import { Long } from "mongodb";
 import { db } from "@/lib/db";
-import { formatPKR } from "@/lib/money";
+import { formatPKR, integerToBigInt } from "@/lib/money";
 import { VendorForm } from "./vendor-form";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +23,7 @@ export default async function VendorsPage() {
         {vendors.length === 0 ? <div className="empty-state"><b>No vendors yet</b><span>Add the first supplier above to begin procurement.</span></div> : (
           <table className="table">
             <thead><tr><th>Code</th><th>Vendor</th><th>Phone</th><th>Current payable</th><th>Status</th></tr></thead>
-            <tbody>{vendors.map((vendor) => <tr key={vendor._id.toString()}><td><b>{vendor.code}</b></td><td>{vendor.name}</td><td>{vendor.phone || "—"}</td><td>{formatPKR((vendor.payable as Long | undefined)?.toBigInt() ?? 0n)}</td><td><span className="badge">{vendor.active ? "Active" : "Inactive"}</span></td></tr>)}</tbody>
+            <tbody>{vendors.map((vendor) => <tr key={vendor._id.toString()}><td><b>{vendor.code}</b></td><td>{vendor.name}</td><td>{vendor.phone || "—"}</td><td>{formatPKR(integerToBigInt(vendor.payable))}</td><td><span className="badge">{vendor.active ? "Active" : "Inactive"}</span></td></tr>)}</tbody>
           </table>
         )}
       </div>

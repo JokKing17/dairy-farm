@@ -1,13 +1,12 @@
 import { AlertTriangle, ArrowRight } from "lucide-react";
-import { Long } from "mongodb";
 import { requireSession } from "@/lib/auth";
-import { formatMilli, formatPKR } from "@/lib/money";
+import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
 import { dashboard } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
 function bigint(value: unknown) {
-  return value instanceof Long ? value.toBigInt() : 0n;
+  return integerToBigInt(value);
 }
 
 function greeting() {

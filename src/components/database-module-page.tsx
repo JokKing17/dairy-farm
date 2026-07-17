@@ -1,9 +1,8 @@
-import { Long } from "mongodb";
 import { db } from "@/lib/db";
-import { formatPKR } from "@/lib/money";
+import { formatPKR, integerToBigInt } from "@/lib/money";
 
 const display = (value: unknown, key: string) => {
-  if (value instanceof Long) return key.toLowerCase().includes("paisa") ? formatPKR(value.toBigInt()) : value.toString();
+  if (key.toLowerCase().includes("paisa")) return formatPKR(integerToBigInt(value));
   if (value instanceof Date) return value.toLocaleDateString("en-PK", { timeZone: "Asia/Karachi" });
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
