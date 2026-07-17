@@ -8,7 +8,7 @@ import { quantityToMilli, rupeesToPaisa } from "@/lib/money";
 import { paymentSchema, postPayment } from "@/lib/services/payment";
 
 export type ActionState={error?:string;success?:string};
-export const customerSchema=z.object({name:z.string().trim().min(2),phone:z.string().trim().max(20).optional(),whatsapp:z.string().trim().max(20).optional(),address:z.string().trim().max(300).optional(),customerType:z.enum(["household","shop"]),dailyQuantity:z.string().optional(),deliveryDays:z.string().default("1,2,3,4,5,6,7"),startDate:z.iso.date().optional(),paused:z.string().optional(),milkRate:z.string().optional(),deliverySequence:z.string().optional(),openingBalance:z.string().default("0"),notes:z.string().trim().max(500).optional()}).superRefine((value,context)=>{
+const customerSchema=z.object({name:z.string().trim().min(2),phone:z.string().trim().max(20).optional(),whatsapp:z.string().trim().max(20).optional(),address:z.string().trim().max(300).optional(),customerType:z.enum(["household","shop"]),dailyQuantity:z.string().optional(),deliveryDays:z.string().default("1,2,3,4,5,6,7"),startDate:z.iso.date().optional(),paused:z.string().optional(),milkRate:z.string().optional(),deliverySequence:z.string().optional(),openingBalance:z.string().default("0"),notes:z.string().trim().max(500).optional()}).superRefine((value,context)=>{
   if(value.customerType==="household"){
     if(!value.phone||value.phone.length<7)context.addIssue({code:"custom",path:["phone"],message:"Enter the household customer's phone number."});
     if(!value.address||value.address.length<2)context.addIssue({code:"custom",path:["address"],message:"Enter the house delivery address."});
