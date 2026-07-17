@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "validate": "npm run test && npm run typecheck && npm run lint && npm run build",
+    "migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
     "seed": "node --env-file=.env --import tsx scripts/seed.ts"
   },
   "dependencies": {
@@ -35,6 +36,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.2",
+    "@emnapi/runtime": "^1.11.2",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",

@@ -97,6 +97,10 @@ export async function getSession(): Promise<Session | null> {
   if (!storedSession || !user || user.sessionVersion !== token.sessionVersion || !roles.includes(user.role)) {
     return null;
   }
+  const lastSeenAt = storedSession.lastSeenAt instanceof Date ? storedSession.lastSeenAt : new Date(0);
+  if (Date.now() - lastSeenAt.getTime() > 5 * 60 * 1000) {
+    void database.collection("sessions").updateOne({ sessionId: token.sessionId }, { $set: { lastSeenAt: new Date() } }).catch(() => undefined);
+  }
 
   return {
     ...token,

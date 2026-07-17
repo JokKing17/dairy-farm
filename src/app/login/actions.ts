@@ -2,6 +2,7 @@
 
 import argon2 from "argon2";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { createSession, destroySession } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -21,20 +22,25 @@ export async function login(_: LoginState, formData: FormData): Promise<LoginSta
   });
   if (!parsed.success) return { error: "Enter a valid email address and password." };
 
-  const database = await db();
+  let database;
+  try { database = await db(); await database.command({ ping: 1 }); } catch { return { error: "DairyFlow cannot reach the database. Ask the owner to check the database settings." }; }
+  const requestHeaders = await headers();
+  const forwarded = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const fingerprint = `${forwarded ?? requestHeaders.get("x-real-ip") ?? "local"}:${(requestHeaders.get("user-agent") ?? "unknown").slice(0, 120)}`;
   const windowStart = new Date(Date.now() - 15 * 60 * 1000);
-  const recentFailures = await database.collection("login_attempts").countDocuments({
+  const [emailFailures, fingerprintFailures] = await Promise.all([database.collection("login_attempts").countDocuments({
     email: parsed.data.email,
     successful: false,
     createdAt: { $gte: windowStart },
-  });
-  if (recentFailures >= 5) return { error: "Too many attempts. Try again in 15 minutes." };
+  }), database.collection("login_attempts").countDocuments({ fingerprint, successful: false, createdAt: { $gte: windowStart } })]);
+  if (emailFailures >= 10 || fingerprintFailures >= 20) return { error: "Too many attempts from this device. Try again in 15 minutes." };
 
   const user = await database.collection("users").findOne({ email: parsed.data.email });
   const valid = Boolean(user?.active && user.passwordHash && await argon2.verify(String(user.passwordHash), parsed.data.password));
   await database.collection("login_attempts").insertOne({
     email: parsed.data.email,
     userId: user?._id ?? null,
+    fingerprint,
     successful: valid,
     createdAt: new Date(),
   });

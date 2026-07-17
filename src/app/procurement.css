@@ -4,3 +4,4 @@
 .procurement-totals span { display: grid; gap: 4px; }
 .procurement-totals small { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 @media(max-width:700px){.procurement-totals{align-items:stretch;flex-direction:column}.procurement-toolbar{align-items:flex-start;flex-direction:column}}
+.table-scroll{overflow-x:auto}.field-error{display:block;color:var(--danger);margin-top:4px}.review-dialog{position:fixed;inset:0;background:#102d2588;z-index:50;display:grid;place-items:center;padding:20px}.review-card{width:min(560px,100%);max-height:85vh;overflow:auto}.review-line,.review-total{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid var(--line)}.review-total{font-size:16px;margin-bottom:16px}

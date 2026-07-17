@@ -1,4 +1,6 @@
-import { CalendarDays, Search, Wifi } from "lucide-react";
+import { CalendarDays, Search } from "lucide-react";
+import Link from "next/link";
+import { ConnectionStatus } from "@/components/connection-status";
 import { Sidebar } from "@/components/sidebar";
 import { requireSession } from "@/lib/auth";
 import { logout } from "../login/actions";
@@ -11,11 +13,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="main">
         <header className="topbar">
           <div className="toolbar">
-            <button className="button secondary" type="button"><Search size={14} /> Search</button>
-            <span className="subtitle"><Wifi size={13} /> Connected</span>
+            <Link className="button secondary" href="/search"><Search size={14} /> Search</Link>
+            <ConnectionStatus />
           </div>
           <div className="toolbar">
-            <button className="button secondary" type="button"><CalendarDays size={14} /> Today</button>
+            <Link className="button secondary" href="/dashboard"><CalendarDays size={14} /> Today</Link>
             <span className="badge">{session.name} · {session.role}</span>
             <form action={logout}><button className="button secondary">Log out</button></form>
           </div>

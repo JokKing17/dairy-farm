@@ -8,6 +8,8 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      SESSION_SECRET: ci-only-7f6a294a8baf4fb880fc06c6dc13b229f70a7698
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

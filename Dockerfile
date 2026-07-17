@@ -6,7 +6,7 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN SESSION_SECRET=docker-build-only-8f74f69ed7314e53a911be0288c97f56 npm run build
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production

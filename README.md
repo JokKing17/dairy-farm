@@ -5,7 +5,7 @@ Private dairy business operations and accounting system built with Next.js, Type
 ## Architecture
 
 - `src/app`: App Router screens and protected API routes
-- `src/lib/domain.ts`: transactional posting services and idempotency enforcement
+- `src/lib/services`: transactional posting services and idempotency enforcement
 - `src/lib/db.ts`: reusable MongoDB connection and transaction wrapper
 - `src/lib/money.ts`: exact PKR and quantity calculations
 - MongoDB ledger entries are authoritative; balances are aggregation-derived
@@ -16,12 +16,12 @@ Private dairy business operations and accounting system built with Next.js, Type
 1. Copy `.env.example` to `.env` and replace the session secret and owner password. Keep `directConnection=true` when connecting from Windows to the local Docker MongoDB replica set.
 2. Run `docker compose up -d mongo`.
 3. If the replica set is not initialized automatically: `docker compose exec mongo mongosh --eval "rs.initiate()"`.
-4. Run `npm install`, `npm run seed`, then `npm run dev`.
+4. Run `npm install`, `npm run migrate`, `npm run seed`, then `npm run dev`.
 5. Open `http://localhost:3000`. Health is available at `/api/health`.
 
 ## Validation
 
-Run `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
+Run `npm ci`, `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run migrate`, and `npm run seed`.
 
 ## Production
 
