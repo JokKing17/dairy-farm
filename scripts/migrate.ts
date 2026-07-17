@@ -21,7 +21,7 @@ const indexes: Record<string, IndexDescription[]> = {
   customer_deliveries: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { customerId: 1, businessDate: 1 }, unique: true, partialFilterExpression: { status: "posted" } }, { key: { businessDate: -1, deliveryStatus: 1 } }],
   sales: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1 } }],
   expenses: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1, status: 1 } }],
-  production_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1 } }],
+  production_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { idempotencyKey: 1 }, unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } }, { key: { businessDate: -1, status: 1 } }, { key: { yogurtProductSku: 1, businessDate: -1 } }],
   payments: [{ key: { transactionNo: 1 }, unique: true }, { key: { partyType: 1, partyId: 1, businessDate: -1 } }],
   party_ledger_entries: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { partyType: 1, partyId: 1, businessDate: 1, status: 1 } }],
   inventory_movements: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { productSku: 1, location: 1, businessDate: 1, status: 1 } }],
@@ -85,11 +85,11 @@ async function migrateProductInventoryRules() {
   const now=new Date();
   const configurations=[
     {sku:"MILK-001",name:"Fresh Milk",unit:"liter",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"},
-    {sku:"YOG-001",name:"Yogurt / Dahi",unit:"kilogram",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
-    {sku:"BREAD-001",name:"Bread",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
-    {sku:"EGG-001",name:"Eggs",unit:"tray",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
-    {sku:"ISPAGHOL-001",name:"Ispaghol / Psyllium Husk",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false},
-    {sku:"KUNDA-001",name:"Kunda Dahi",unit:"pot",category:"internal",active:true,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true},
+    {sku:"YOG-001",name:"Yogurt / Dahi",unit:"kilogram",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"yogurt-production"},
+    {sku:"BREAD-001",name:"Bread",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
+    {sku:"EGG-001",name:"Eggs",unit:"tray",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
+    {sku:"ISPAGHOL-001",name:"Ispaghol / Psyllium Husk",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
+    {sku:"KUNDA-001",name:"Kunda Dahi",unit:"pot",category:"internal",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true},
     {sku:"GL-001",name:"Gold Leaf",unit:"packet",category:"disabled",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false},
   ];
   for(const configuration of configurations){const{sku,...flags}=configuration;await database.collection("products").updateOne({sku},{$set:{...flags,updatedAt:now},$setOnInsert:{sku,stockMilli:0,averageCostPaisa:0,retailRatePaisa:0,lowStockMilli:0,createdAt:now}},{upsert:true});}

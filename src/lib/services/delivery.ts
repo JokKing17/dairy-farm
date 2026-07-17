@@ -69,7 +69,10 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
 
       const pricedProducts = line.products.filter((item) => item.quantity.trim() && item.quantity !== "0").map((item) => {
         const product = products.get(item.sku);
-        if (item.sku === "MILK-001" || !isDailyDeliveryProduct(product)) throw new Error(`${String(product?.name ?? item.sku)} is out of stock or unavailable for daily delivery.`);
+        if (item.sku === "MILK-001" || !isDailyDeliveryProduct(product)) {
+          if(product&&integerToBigInt(product.retailRatePaisa)<=0n)throw new Error(`Set a selling price for ${String(product.name)} first.`);
+          throw new Error(`${String(product?.name ?? item.sku)} is out of stock or unavailable for daily delivery.`);
+        }
         return { sku: item.sku, quantity: item.quantity, ratePaisa: integerToBigInt(product.retailRatePaisa), costPaisa: integerToBigInt(product.averageCostPaisa) };
       });
       const calculation = calculateDeliveryCharge({ deliveryStatus: line.deliveryStatus, milkQuantity: line.milkQuantity || "0", milkRatePaisa: ratePaisa, products: pricedProducts });

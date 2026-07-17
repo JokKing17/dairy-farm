@@ -1,0 +1,8 @@
+"use server";
+import { revalidatePath } from "next/cache";
+import { requireSession } from "@/lib/auth";
+import { postYogurtProduction,reverseYogurtProduction,yogurtProductionSchema } from "@/lib/services/yogurt-production";
+export type ProductionState={error?:string;result?:{transactionNo:string;milkUsedMilli:string;yogurtOutputMilli:string;yogurtUnitCostPaisa:string;estimatedGrossProfitPaisa:string}};
+export async function createYogurtBatch(_:ProductionState,formData:FormData):Promise<ProductionState>{const actor=await requireSession(["owner","manager"]);let payload:unknown;try{payload=JSON.parse(String(formData.get("payload")))}catch{return{error:"The Yogurt batch details are invalid."}}const parsed=yogurtProductionSchema.safeParse(payload);if(!parsed.success)return{error:parsed.error.issues[0]?.message??"Check the Yogurt batch."};try{const result=await postYogurtProduction(parsed.data,actor.userId);for(const path of ["/production","/inventory","/deliveries","/dashboard","/reports"])revalidatePath(path);return{result}}catch(error){return{error:error instanceof Error?error.message:"The Yogurt batch could not be posted."}}}
+export type ProductionReversalState={error?:string;success?:string};
+export async function reverseYogurtBatch(_:ProductionReversalState,formData:FormData):Promise<ProductionReversalState>{const actor=await requireSession(["owner"]);try{const result=await reverseYogurtProduction(String(formData.get("transactionNo")??""),String(formData.get("reason")??""),actor.userId);for(const path of ["/production","/inventory","/deliveries","/dashboard","/reports"])revalidatePath(path);return{success:`Reversed as ${result.reversalNo}`}}catch(error){return{error:error instanceof Error?error.message:"The batch could not be reversed."}}}

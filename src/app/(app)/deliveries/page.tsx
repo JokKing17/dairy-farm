@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { formatMilli, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { DeliverySheet } from "./delivery-sheet";
-import { DAILY_DELIVERY_PRODUCT_FILTER } from "@/lib/product-eligibility";
+import { DAILY_DELIVERY_CATALOG_FILTER, DAILY_DELIVERY_CATALOG_SKUS } from "@/lib/product-eligibility";
 export const dynamic="force-dynamic";
 
 export default async function DailyDeliveriesPage(){
@@ -10,11 +10,12 @@ export default async function DailyDeliveriesPage(){
   const [customers,settings,products,existingBatch]=await Promise.all([
     database.collection("customers").aggregate([{$match:{active:true,customerType:"household"}},{$lookup:{from:"customer_rate_history",let:{customer:"$_id"},pipeline:[{$match:{$expr:{$eq:["$customerId","$$customer"]},effectiveFrom:{$lte:now},$or:[{effectiveTo:null},{effectiveTo:{$gt:now}}]}},{$sort:{effectiveFrom:-1}},{$limit:1}],as:"effectiveRate"}},{$sort:{deliverySequence:1,name:1}}]).toArray(),
     database.collection("business_settings").findOne({_id:"default" as never}),
-    database.collection("products").find(DAILY_DELIVERY_PRODUCT_FILTER).sort({name:1}).toArray(),
+    database.collection("products").find(DAILY_DELIVERY_CATALOG_FILTER).toArray(),
     database.collection("delivery_batches").findOne({businessDate,status:"posted"}),
   ]);
   const defaultRate=integerToBigInt(settings?.customerRatePaisa);
   const customerRows=customers.map(customer=>({id:customer._id.toString(),code:String(customer.code),name:String(customer.name),address:String(customer.address??""),normalQuantity:formatMilli(integerToBigInt(customer.defaultQuantityMilli)),ratePaisa:integerToBigInt(customer.effectiveRate?.[0]?.ratePaisa??customer.milkRatePaisa,defaultRate).toString(),paused:Boolean(customer.paused)}));
-  const productRows=products.map(product=>({sku:String(product.sku),name:String(product.name),unit:String(product.unit),ratePaisa:integerToBigInt(product.retailRatePaisa).toString()}));
+  const productMap=new Map(products.map(product=>[String(product.sku),product])),names:Record<string,string>={"YOG-001":"Yogurt / Dahi","BREAD-001":"Bread","EGG-001":"Eggs","ISPAGHOL-001":"Ispaghol / Psyllium Husk"},units:Record<string,string>={"YOG-001":"kilogram","BREAD-001":"packet","EGG-001":"tray","ISPAGHOL-001":"packet"};
+  const productRows=DAILY_DELIVERY_CATALOG_SKUS.map(sku=>{const product=productMap.get(sku),stock=integerToBigInt(product?.stockMilli),rate=integerToBigInt(product?.retailRatePaisa),source=sku==="YOG-001"?"yogurt-production":"inventory-receipt";let unavailableReason:string|undefined;if(!product||product.stockSource!==source||stock<=0n)unavailableReason=sku==="YOG-001"?"No Yogurt available — create a Yogurt batch":"Out of stock — add inventory";else if(rate<=0n)unavailableReason="Set a selling price first";return{sku,name:String(product?.name??names[sku]),unit:String(product?.unit??units[sku]),ratePaisa:rate.toString(),stockMilli:stock.toString(),stockSource:String(product?.stockSource??source),unavailableReason}});
   return <div className="content"><div className="title">Daily Deliveries</div><div className="subtitle">One simple household list for today. Normal milk quantities are pre-filled.</div>{existingBatch?<div className="card table-card form-success"><b>Today was already posted as {String(existingBatch.transactionNo)}</b><span>Duplicate delivery charges are blocked.</span></div>:customerRows.length?<DeliverySheet customers={customerRows} products={productRows} today={businessDate}/>:<div className="card table-card empty-state"><b>No active household customers</b><span>Add household customers before posting daily deliveries.</span></div>}</div>;
 }

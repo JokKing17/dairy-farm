@@ -6,7 +6,7 @@ import { Bell, ChartNoAxesCombined, Factory, LayoutDashboard, Milk, ReceiptText,
 
 const groups = [
   { name: "Workspace", items: [["Dashboard", "/dashboard", LayoutDashboard], ["Quick Entry", "/quick-entry", Zap]] },
-  { name: "Operations", items: [["Vendors", "/vendors", Truck], ["Customers", "/customers", Users], ["Daily Deliveries", "/deliveries", Milk], ["Shop Sales", "/sales", ShoppingBasket], ["Inventory", "/inventory", Warehouse], ["Production", "/production", Factory]] },
+  { name: "Operations", items: [["Vendors", "/vendors", Truck], ["Customers", "/customers", Users], ["Daily Deliveries", "/deliveries", Milk], ["Shop Sales", "/sales", ShoppingBasket], ["Inventory", "/inventory", Warehouse], ["Yogurt / Kunda", "/production", Factory]] },
   { name: "Finance", items: [["Expenses", "/expenses", ReceiptText], ["Cash & Ledgers", "/cashbook", WalletCards], ["Reports", "/reports", ChartNoAxesCombined]] },
   { name: "System", items: [["Notifications", "/notifications", Bell], ["Settings", "/settings", Settings]] },
 ] as const;

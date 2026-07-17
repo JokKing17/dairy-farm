@@ -16,7 +16,7 @@ export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:str
   if(new Set(input.lines.map(line=>line.productSku)).size!==input.lines.length)throw new Error("Each product can appear only once on a receipt.");
   const now=new Date(),number=transactionNo("INV"),receiptLines:Document[]=[],movements:Document[]=[],rateChanges:Document[]=[],balances:Array<{sku:string;stockMilli:string;averageCostPaisa:string;retailRatePaisa:string}>=[];let subtotal=0n;
   for(const[index,line]of input.lines.entries()){
-    if(!isManualReceiptSku(line.productSku))throw new Error(line.productSku==="MILK-001"?"Fresh Milk is updated only from Vendor Milk Entries.":"This product cannot be received through Add Inventory.");
+    if(!isManualReceiptSku(line.productSku))throw new Error(line.productSku==="MILK-001"?"Fresh Milk stock is updated through Vendor Milk Procurement.":line.productSku==="YOG-001"?"Yogurt stock must be created through Yogurt Production.":"This product cannot be received through Add Inventory.");
     const product=await database.collection("products").findOne({sku:line.productSku},{session});
     if(!product||!isEligibleManualReceiptProduct({sku:String(product.sku),active:Boolean(product.active),inventoryManaged:Boolean(product.inventoryManaged),allowManualStockReceipt:Boolean(product.allowManualStockReceipt),internalOnly:Boolean(product.internalOnly)}))throw new Error("This product is inactive or not eligible for inventory receiving.");
     const quantityMilli=quantityToMilli(line.quantity),purchaseUnitCostPaisa=rupeesToPaisa(line.buyingPrice);if(quantityMilli<=0n||purchaseUnitCostPaisa<=0n)throw new Error("Quantity and buying price must be greater than zero.");
