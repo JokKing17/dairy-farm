@@ -3,21 +3,30 @@ import { z } from "zod";
 import { calculateDeliveryCharge } from "../delivery-calculations";
 import { transaction } from "../db";
 import { transactionNo } from "../ids";
+import { validatePiecesPerTray } from "../egg-units";
 import { integerToBigInt, quantityToMilli } from "../money";
 import { isDailyDeliveryProduct } from "../product-eligibility";
 
-const productInput = z.object({ sku: z.string().min(1).max(30), quantity: z.string().max(20) });
+const productInput = z.object({
+  sku: z.string().min(1).max(30),
+  quantity: z.string().max(20),
+  saleUnit: z.enum(["piece", "tray"]).optional(),
+});
+
 export const deliveryInputSchema = z.object({
   businessDate: z.iso.date(),
   idempotencyKey: z.uuid(),
-  lines: z.array(z.object({
-    customerId: z.string().refine(ObjectId.isValid, "Invalid customer"),
-    deliveryStatus: z.enum(["delivered", "changed", "extra", "skipped", "paused"]),
-    milkQuantity: z.string().max(20),
-    products: z.array(productInput).max(10).default([]),
-    notes: z.string().max(500).optional(),
-  })).min(1).max(100),
+  lines: z.array(
+    z.object({
+      customerId: z.string().refine(ObjectId.isValid, "Invalid customer"),
+      deliveryStatus: z.enum(["delivered", "changed", "extra", "skipped", "paused"]),
+      milkQuantity: z.string().max(20),
+      products: z.array(productInput).max(10).default([]),
+      notes: z.string().max(500).optional(),
+    }),
+  ).min(1).max(100),
 });
+
 export type DeliveryInput = z.infer<typeof deliveryInputSchema>;
 
 const duplicateError = (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === 11000);
@@ -70,8 +79,26 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
       const pricedProducts = line.products.filter((item) => item.quantity.trim() && item.quantity !== "0").map((item) => {
         const product = products.get(item.sku);
         if (item.sku === "MILK-001" || !isDailyDeliveryProduct(product)) {
-          if(product&&integerToBigInt(product.retailRatePaisa)<=0n)throw new Error(`Set a selling price for ${String(product.name)} first.`);
+          if (product && integerToBigInt(product.retailRatePaisa) <= 0n) throw new Error(`Set a selling price for ${String(product.name)} first.`);
           throw new Error(`${String(product?.name ?? item.sku)} is out of stock or unavailable for daily delivery.`);
+        }
+        if (item.sku === "EGG-001") {
+          const piecesPerTray = validatePiecesPerTray(product?.piecesPerTray);
+          const saleUnit = item.saleUnit ?? product?.defaultSaleUnit ?? "piece";
+          const pieceRatePaisa = integerToBigInt(product?.pieceSellingRatePaisa, product?.retailRatePaisa);
+          const trayRatePaisa = integerToBigInt(product?.traySellingRatePaisa);
+          const ratePaisa = saleUnit === "tray" ? trayRatePaisa : pieceRatePaisa;
+          if (ratePaisa <= 0n) throw new Error("Set a selling price for Eggs first.");
+          return {
+            sku: item.sku,
+            quantity: item.quantity,
+            ratePaisa,
+            costPaisa: integerToBigInt(product?.averageCostPaisa),
+            saleUnit,
+            piecesPerTray,
+            pieceRatePaisa,
+            trayRatePaisa,
+          };
         }
         return { sku: item.sku, quantity: item.quantity, ratePaisa: integerToBigInt(product.retailRatePaisa), costPaisa: integerToBigInt(product.averageCostPaisa) };
       });
@@ -80,15 +107,26 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
 
       const snapshottedProducts = pricedProducts.map((item) => {
         const quantityMilli = quantityToMilli(item.quantity);
-        const amountPaisa = (quantityMilli * item.ratePaisa + 500n) / 1000n, costOfGoodsSoldPaisa=(quantityMilli*item.costPaisa+500n)/1000n;
+        if (item.sku === "EGG-001") {
+          const enteredQuantity = quantityMilli / 1000n;
+          const normalizedPieces = item.saleUnit === "tray" ? enteredQuantity * BigInt(item.piecesPerTray ?? 30) : enteredQuantity;
+          const amountPaisa = (quantityMilli * item.ratePaisa + 500n) / 1000n;
+          const costOfGoodsSoldPaisa = normalizedPieces * item.costPaisa;
+          inventoryRequired.set(item.sku, (inventoryRequired.get(item.sku) ?? 0n) + normalizedPieces * 1000n);
+          inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: item.sku, location: "main-shop", type: "customer-delivery", enteredQuantity: Long.fromBigInt(enteredQuantity), enteredUnit: item.saleUnit, piecesPerTray: item.piecesPerTray, normalizedPieces: Long.fromBigInt(normalizedPieces), quantityMilli: Long.fromBigInt(-normalizedPieces * 1000n), unitSaleRatePaisa: Long.fromBigInt(item.ratePaisa), sellingRatePerEnteredUnitPaisa: Long.fromBigInt(item.ratePaisa), pieceSellingRateSnapshotPaisa: Long.fromBigInt(item.pieceRatePaisa ?? item.ratePaisa), traySellingRateSnapshotPaisa: Long.fromBigInt(item.trayRatePaisa ?? item.ratePaisa), averageCostPerPiecePaisa: Long.fromBigInt(item.costPaisa), revenuePaisa: Long.fromBigInt(amountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(costOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(amountPaisa - costOfGoodsSoldPaisa), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
+          return { sku: item.sku, quantityMilli: Long.fromBigInt(quantityMilli), enteredQuantity: Long.fromBigInt(enteredQuantity), enteredUnit: item.saleUnit, piecesPerTray: item.piecesPerTray, normalizedPieces: Long.fromBigInt(normalizedPieces), ratePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa: Long.fromBigInt(item.costPaisa), amountPaisa: Long.fromBigInt(amountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(costOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(amountPaisa - costOfGoodsSoldPaisa) };
+        }
+        const amountPaisa = (quantityMilli * item.ratePaisa + 500n) / 1000n;
+        const costOfGoodsSoldPaisa = (quantityMilli * item.costPaisa + 500n) / 1000n;
         inventoryRequired.set(item.sku, (inventoryRequired.get(item.sku) ?? 0n) + quantityMilli);
-        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: item.sku, location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-quantityMilli), unitSaleRatePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa:Long.fromBigInt(item.costPaisa),revenuePaisa:Long.fromBigInt(amountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(costOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(amountPaisa-costOfGoodsSoldPaisa), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
-        return { sku: item.sku, quantityMilli: Long.fromBigInt(quantityMilli), ratePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa:Long.fromBigInt(item.costPaisa),amountPaisa: Long.fromBigInt(amountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(costOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(amountPaisa-costOfGoodsSoldPaisa) };
+        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: item.sku, location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-quantityMilli), unitSaleRatePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa: Long.fromBigInt(item.costPaisa), revenuePaisa: Long.fromBigInt(amountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(costOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(amountPaisa - costOfGoodsSoldPaisa), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
+        return { sku: item.sku, quantityMilli: Long.fromBigInt(quantityMilli), ratePaisa: Long.fromBigInt(item.ratePaisa), unitCostPaisa: Long.fromBigInt(item.costPaisa), amountPaisa: Long.fromBigInt(amountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(costOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(amountPaisa - costOfGoodsSoldPaisa) };
       });
       if (calculation.milkQuantityMilli > 0n) {
         inventoryRequired.set("MILK-001", (inventoryRequired.get("MILK-001") ?? 0n) + calculation.milkQuantityMilli);
-        const milkCost=integerToBigInt(products.get("MILK-001")?.averageCostPaisa),milkCogs=(calculation.milkQuantityMilli*milkCost+500n)/1000n;
-        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: "MILK-001", location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-calculation.milkQuantityMilli), unitSaleRatePaisa: Long.fromBigInt(ratePaisa),unitCostPaisa:Long.fromBigInt(milkCost),revenuePaisa:Long.fromBigInt(calculation.milkAmountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(milkCogs),grossProfitPaisa:Long.fromBigInt(calculation.milkAmountPaisa-milkCogs), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
+        const milkCost = integerToBigInt(products.get("MILK-001")?.averageCostPaisa);
+        const milkCogs = (calculation.milkQuantityMilli * milkCost + 500n) / 1000n;
+        inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: "MILK-001", location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-calculation.milkQuantityMilli), unitSaleRatePaisa: Long.fromBigInt(ratePaisa), unitCostPaisa: Long.fromBigInt(milkCost), revenuePaisa: Long.fromBigInt(calculation.milkAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(milkCogs), grossProfitPaisa: Long.fromBigInt(calculation.milkAmountPaisa - milkCogs), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
       }
 
       const lineNo = index + 1;
@@ -103,12 +141,12 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
       const result = await database.collection("products").updateOne({ sku, active: true, stockMilli: { $gte: Long.fromBigInt(required) } }, { $inc: { stockMilli: Long.fromBigInt(-required) }, $set: { updatedAt: now, updatedBy: actorId } }, { session });
       if (!result.modifiedCount) throw new Error(`Not enough ${String(products.get(sku)?.name ?? sku)} stock for today's deliveries.`);
     }
-    const totalCostOfGoodsSoldPaisa=inventoryDocuments.reduce((sum,movement)=>sum+integerToBigInt(movement.costOfGoodsSoldPaisa),0n),grossProfitPaisa=totalAmountPaisa-totalCostOfGoodsSoldPaisa;
-    await database.collection("delivery_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(totalCostOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(grossProfitPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
+    const totalCostOfGoodsSoldPaisa = inventoryDocuments.reduce((sum, movement) => sum + integerToBigInt(movement.costOfGoodsSoldPaisa), 0n), grossProfitPaisa = totalAmountPaisa - totalCostOfGoodsSoldPaisa;
+    await database.collection("delivery_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
     await database.collection("customer_deliveries").insertMany(deliveryDocuments, { session });
     if (ledgerDocuments.length) await database.collection("party_ledger_entries").insertMany(ledgerDocuments, { session });
     if (inventoryDocuments.length) await database.collection("inventory_movements").insertMany(inventoryDocuments, { session });
-    await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa),costOfGoodsSoldPaisa:Long.fromBigInt(totalCostOfGoodsSoldPaisa),grossProfitPaisa:Long.fromBigInt(grossProfitPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
+    await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
     if (skippedCustomers > 0) await database.collection("notifications").insertOne({ title: "Today's household deliveries are incomplete.", message: `${skippedCustomers} customer${skippedCustomers === 1 ? " was" : "s were"} skipped or paused.`, severity: "warning", status: "open", relatedType: "daily_delivery_batch", relatedId: number, relatedHref: "/deliveries", createdAt: now, createdBy: actorId }, { session });
     await database.collection("audit_logs").insertOne({ actorId, action: "post", entity: "daily_delivery_batch", entityId: number, metadata: { businessDate: input.businessDate, deliveredCustomers, skippedCustomers }, createdAt: now }, { session });
     const result = { transactionNo: number, deliveredCustomers, skippedCustomers, totalMilkMilli: totalMilkMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };

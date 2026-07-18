@@ -67,7 +67,7 @@ export async function saveSettings(
       lossMilli = 1000 - yieldMilli,
       pieceRatePaisa = rupeesToPaisa(value.eggPieceSellingPrice),
       trayRatePaisa = rupeesToPaisa(value.eggTraySellingPrice);
-    if(pieceRatePaisa<0n||trayRatePaisa<0n)return{error:"Egg selling prices cannot be negative."};
+    if(pieceRatePaisa<=0n||trayRatePaisa<=0n)return{error:"Egg selling prices must be greater than zero."};
     const egg=await database.collection("products").findOne({sku:"EGG-001"});
     if(!egg)return{error:"EGG-001 is missing. Run the migration or seed command."};
     if(Number(egg.piecesPerTray??30)!==value.eggsPerTray&&value.confirmEggConversionChange!=="on")return{error:"Confirm the Eggs-per-tray change. It applies only to future transactions."};

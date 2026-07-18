@@ -1,12 +1,13 @@
 "use client";
 /* eslint-disable @next/next/no-html-link-for-pages */
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useState, useCallback } from "react";
 import {
   formatMilli,
   formatPKR,
   multiplyQuantityRate,
   quantityToMilli,
 } from "@/lib/money";
+import { formatEggStock } from "@/lib/egg-units";
 import {
   createShopSale,
   reverseSale,
@@ -19,12 +20,17 @@ type Product = {
   unit: string;
   ratePaisa: string;
   stockMilli: string;
+  pieceSellingRatePaisa?: string;
+  traySellingRatePaisa?: string;
+  piecesPerTray?: number;
+  defaultSaleUnit?: "piece" | "tray";
 };
 type Customer = { id: string; name: string; code: string };
 type Line = {
   id: string;
   sku: string;
   quantity: string;
+  saleUnit: "piece" | "tray" | "";
   yogurtFormat: "loose" | "3" | "3.5" | "custom";
   customKundaSize: string;
 };
@@ -54,14 +60,14 @@ export function ShopSaleForm({
         id: crypto.randomUUID(),
         sku: "",
         quantity: "",
+        saleUnit: "",
         yogurtFormat: "loose",
         customKundaSize: "",
       },
     ]);
-  const bySku = useMemo(
-      () => new Map(products.map((product) => [product.sku, product])),
-      [products],
-    ),
+  // Next.js compiler may skip preserving manual memoization; keep stable bySku here
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
+  const bySku = useMemo(() => new Map(products.map((product) => [product.sku, product])), [products]),
     lineQuantity = (line: Line) => {
       const entered = quantityToMilli(line.quantity || "0");
       if (line.sku !== "YOG-001" || line.yogurtFormat === "loose")
@@ -72,23 +78,50 @@ export function ShopSaleForm({
             ? quantityToMilli(line.customKundaSize)
             : quantityToMilli(line.yogurtFormat);
       return count * size;
-    };
+    },
+    eggLinePreview = useCallback((line: Line) => {
+      const product = bySku.get(line.sku);
+      if (!product || line.sku !== "EGG-001" || !line.saleUnit) return null;
+      try {
+        const entered = quantityToMilli(line.quantity || "0");
+        if (entered <= 0n || entered % 1000n !== 0n) return null;
+        const count = entered / 1000n,
+          piecesPerTray = BigInt(product.piecesPerTray ?? 30),
+          pieceRate = BigInt(product.pieceSellingRatePaisa ?? product.ratePaisa),
+          trayRate = BigInt(product.traySellingRatePaisa ?? 0),
+          rate = line.saleUnit === "tray" ? trayRate : pieceRate,
+          normalizedPieces =
+            line.saleUnit === "tray" ? count * piecesPerTray : count,
+          stockPieces = BigInt(product.stockMilli) / 1000n,
+          remainingPieces = stockPieces - normalizedPieces,
+          amount = count * rate;
+        return {
+          piecesPerTray,
+          normalizedPieces,
+          remainingPieces,
+          amount,
+          rate,
+          stockPieces,
+        };
+      } catch {
+        return null;
+      }
+    }, [bySku]);
   const total = useMemo(() => {
     try {
       return lines.reduce((sum, line) => {
         const product = bySku.get(line.sku);
-        return product
-          ? sum +
-              multiplyQuantityRate(
-                lineQuantity(line),
-                BigInt(product.ratePaisa),
-              )
-          : sum;
+        if (!product) return sum;
+        if (line.sku === "EGG-001" && line.saleUnit) {
+          const preview = eggLinePreview(line);
+          return preview ? sum + preview.amount : sum;
+        }
+        return sum + multiplyQuantityRate(lineQuantity(line), BigInt(product.ratePaisa));
       }, 0n);
     } catch {
       return 0n;
     }
-  }, [lines, bySku]);
+  }, [lines, bySku, eggLinePreview]);
   const update = (id: string, change: Partial<Line>) =>
       setLines((current) =>
         current.map((line) => (line.id === id ? { ...line, ...change } : line)),
@@ -102,9 +135,10 @@ export function ShopSaleForm({
       notes,
       lines: lines
         .filter((line) => line.sku && line.quantity)
-        .map(({ sku, quantity, yogurtFormat, customKundaSize }) => ({
+        .map(({ sku, quantity, saleUnit, yogurtFormat, customKundaSize }) => ({
           sku,
           quantity,
+          saleUnit: sku === "EGG-001" ? saleUnit || undefined : undefined,
           yogurtFormat,
           customKundaSize,
         })),
@@ -219,6 +253,10 @@ export function ShopSaleForm({
                     onChange={(event) =>
                       update(line.id, {
                         sku: event.target.value,
+                        saleUnit:
+                          event.target.value === "EGG-001"
+                            ? (bySku.get("EGG-001")?.defaultSaleUnit ?? "piece")
+                            : "",
                         yogurtFormat: "loose",
                       })
                     }
@@ -246,6 +284,19 @@ export function ShopSaleForm({
                       <option value="custom">Prepared custom Kunda</option>
                     </select>
                   ) : null}
+                  {line.sku === "EGG-001" ? (
+                    <select
+                      value={line.saleUnit || (bySku.get("EGG-001")?.defaultSaleUnit ?? "piece")}
+                      onChange={(event) =>
+                        update(line.id, {
+                          saleUnit: event.target.value as Line["saleUnit"],
+                        })
+                      }
+                    >
+                      <option value="piece">Sell Eggs by piece</option>
+                      <option value="tray">Sell Eggs by tray</option>
+                    </select>
+                  ) : null}
                   {line.yogurtFormat === "custom" && line.sku === "YOG-001" ? (
                     <input
                       placeholder="Kunda kg"
@@ -258,7 +309,11 @@ export function ShopSaleForm({
                   ) : null}
                   <input
                     placeholder={
-                      line.sku === "YOG-001" && line.yogurtFormat !== "loose"
+                      line.sku === "EGG-001"
+                        ? line.saleUnit === "tray"
+                          ? "Number of trays"
+                          : "Number of eggs"
+                        : line.sku === "YOG-001" && line.yogurtFormat !== "loose"
                         ? "Kunda count"
                         : (product?.unit ?? "Quantity")
                     }
@@ -272,11 +327,30 @@ export function ShopSaleForm({
                     {product ? (
                       <>
                         <b>
-                          {formatPKR(BigInt(product.ratePaisa))}/{product.unit}
+                          {line.sku === "EGG-001" && line.saleUnit === "tray"
+                            ? formatPKR(BigInt(product.traySellingRatePaisa ?? product.ratePaisa)) + "/tray"
+                            : line.sku === "EGG-001"
+                              ? formatPKR(BigInt(product.pieceSellingRatePaisa ?? product.ratePaisa)) + "/piece"
+                              : `${formatPKR(BigInt(product.ratePaisa))}/${product.unit}`}
                         </b>
                         <small>
-                          {formatMilli(BigInt(product.stockMilli))} available
+                          {line.sku === "EGG-001"
+                            ? (() => {
+                                const stock = formatEggStock(BigInt(product.stockMilli), product.piecesPerTray ?? 30);
+                                return `${stock.label} · ${stock.totalPieces} total eggs`;
+                              })()
+                            : `${formatMilli(BigInt(product.stockMilli))} available`}
                         </small>
+                        {line.sku === "EGG-001" && line.saleUnit ? (
+                          <small>
+                            {(() => {
+                              const preview = eggLinePreview(line);
+                              return preview
+                                ? `Deducts ${preview.normalizedPieces} eggs · Remaining ${preview.remainingPieces} eggs · Line total ${formatPKR(preview.amount)}`
+                                : "Enter a whole number of eggs or trays.";
+                            })()}
+                          </small>
+                        ) : null}
                       </>
                     ) : null}
                   </span>
@@ -304,6 +378,7 @@ export function ShopSaleForm({
                     id: crypto.randomUUID(),
                     sku: "",
                     quantity: "",
+                    saleUnit: "",
                     yogurtFormat: "loose",
                     customKundaSize: "",
                   },

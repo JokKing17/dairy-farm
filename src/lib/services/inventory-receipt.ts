@@ -1,6 +1,6 @@
 import { Long, type Document } from "mongodb";
 import { z } from "zod";
-import { transaction } from "../db";
+import { transaction, db } from "../db";
 import { transactionNo } from "../ids";
 import { inventoryReceiptLine, isEligibleManualReceiptProduct, isManualReceiptSku } from "../inventory-calculations";
 import { integerToBigInt, quantityToMilli, rupeesToPaisa } from "../money";
@@ -11,7 +11,11 @@ export const inventoryReceiptSchema=z.object({businessDate:z.iso.date(),idempote
 export type InventoryReceiptInput=z.infer<typeof inventoryReceiptSchema>;
 const duplicate=(error:unknown)=>Boolean(error&&typeof error==="object"&&"code" in error&&error.code===11000);
 
-export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:string){const input=inventoryReceiptSchema.parse(raw);return transaction(async(database,session)=>{
+export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:string){
+  const input = inventoryReceiptSchema.parse(raw);
+  try {
+    console.log(JSON.stringify({ event: "postInventoryReceipt:start", idempotencyKey: input.idempotencyKey, skuCount: input.lines.length }));
+    return await transaction(async(database,session)=>{
   const previous=await database.collection("idempotency_records").findOne({key:input.idempotencyKey},{session});if(previous)return previous.result as {transactionNo:string;subtotalPaisa:string;paidAmountPaisa:string;balances:Array<{sku:string;stockMilli:string;averageCostPaisa:string;retailRatePaisa:string}>};
   const settings=await database.collection("business_settings").findOne({_id:"default" as never},{session}),today=new Intl.DateTimeFormat("en-CA",{timeZone:String(settings?.timezone??"Asia/Karachi"),year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),dayDifference=Math.round((new Date(`${today}T00:00:00Z`).getTime()-new Date(`${input.businessDate}T00:00:00Z`).getTime())/86_400_000),allowedBackdateDays=Number(settings?.allowedBackdateDays??3);if(dayDifference<0)throw new Error("Future inventory receipts are not allowed.");if(dayDifference>allowedBackdateDays)throw new Error(`Inventory receipts can only be backdated ${allowedBackdateDays} days.`);
   if(new Set(input.lines.map(line=>line.productSku)).size!==input.lines.length)throw new Error("Each product can appear only once on a receipt.");
@@ -21,7 +25,7 @@ export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:str
     const product=await database.collection("products").findOne({sku:line.productSku},{session});
     if(!product||!isEligibleManualReceiptProduct({sku:String(product.sku),active:Boolean(product.active),inventoryManaged:Boolean(product.inventoryManaged),allowManualStockReceipt:Boolean(product.allowManualStockReceipt),internalOnly:Boolean(product.internalOnly)}))throw new Error("This product is inactive or not eligible for inventory receiving.");
     if(line.productSku==="EGG-001"){
-      const piecesPerTray=validatePiecesPerTray(product.piecesPerTray),receivingUnit=line.receivingUnit??"tray",normalized=normalizeEggQuantity(line.quantity,receivingUnit,piecesPerTray),buyingPrice=rupeesToPaisa(line.buyingPrice),previousStockMilli=integerToBigInt(product.stockMilli),previousAverageCostPaisa=integerToBigInt(product.averageCostPaisa),previousPieceRate=integerToBigInt(product.pieceSellingRatePaisa,product.retailRatePaisa),previousTrayRate=integerToBigInt(product.traySellingRatePaisa);
+      const piecesPerTray=validatePiecesPerTray(product.piecesPerTray),receivingUnit=line.receivingUnit??"tray",normalized=normalizeEggQuantity(line.quantity,receivingUnit,piecesPerTray),buyingPrice=rupeesToPaisa(line.buyingPrice),previousStockMilli=integerToBigInt(product.stockMilli),previousAverageCostPaisa=integerToBigInt(product.averageCostPaisa),previousPieceRate=integerToBigInt(product.pieceSellingRatePaisa, integerToBigInt(product.retailRatePaisa)),previousTrayRate=integerToBigInt(product.traySellingRatePaisa);
       let pieceRate=previousPieceRate,trayRate=previousTrayRate;if(!line.keepExistingSellingPrice){pieceRate=rupeesToPaisa(line.pieceSellingPrice??"");trayRate=rupeesToPaisa(line.traySellingPrice??"");if(pieceRate<=0n||trayRate<=0n)throw new Error("Enter valid Egg selling prices per piece and per tray.");}else if(pieceRate<=0n||trayRate<=0n)throw new Error("The first Egg receipt requires selling prices per piece and per tray.");
       const calculated=eggPurchaseCalculation({enteredQuantity:normalized.enteredQuantity,enteredUnit:receivingUnit,buyingPricePerEnteredUnitPaisa:buyingPrice,piecesPerTray,existingStockMilli:previousStockMilli,existingAverageCostPerPiecePaisa:previousAverageCostPaisa});subtotal+=calculated.purchaseTotalPaisa;
       receiptLines.push({productId:product._id,productSku:"EGG-001",productNameSnapshot:String(product.name),unitSnapshot:"piece",enteredQuantity:Long.fromBigInt(normalized.enteredQuantity),enteredUnit:receivingUnit,piecesPerTraySnapshot:piecesPerTray,normalizedPieceQuantity:Long.fromBigInt(calculated.normalizedPieces),quantityMilli:Long.fromBigInt(calculated.normalizedQuantityMilli),buyingPricePerEnteredUnitPaisa:Long.fromBigInt(buyingPrice),purchaseUnitCostPaisa:Long.fromBigInt(calculated.purchaseCostPerPiecePaisa),pieceSellingRatePaisa:Long.fromBigInt(pieceRate),traySellingRatePaisa:Long.fromBigInt(trayRate),sellingUnitRatePaisa:Long.fromBigInt(pieceRate),linePurchaseTotalPaisa:Long.fromBigInt(calculated.purchaseTotalPaisa),previousStockMilli:Long.fromBigInt(previousStockMilli),resultingStockMilli:Long.fromBigInt(calculated.resultingStockMilli),previousAverageCostPaisa:Long.fromBigInt(previousAverageCostPaisa),resultingAverageCostPaisa:Long.fromBigInt(calculated.resultingAverageCostPerPiecePaisa),previousSellingRatePaisa:Long.fromBigInt(previousPieceRate),previousPieceSellingRatePaisa:Long.fromBigInt(previousPieceRate),previousTraySellingRatePaisa:Long.fromBigInt(previousTrayRate)});
@@ -48,7 +52,22 @@ export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:str
   await database.collection("financial_transactions").insertOne({transactionNo:number,kind:"inventory_purchase",amountPaisa:Long.fromBigInt(subtotal),paidAmountPaisa:Long.fromBigInt(paidAmount),outstandingPaisa:Long.fromBigInt(outstanding),businessDate:input.businessDate,status:"posted",createdAt:now,createdBy:actorId},{session});
   if(paidAmount>0n)await database.collection("cashbook_entries").insertOne({transactionNo:number,lineNo:1,businessDate:input.businessDate,account:input.paymentMethod,direction:"out",amountPaisa:Long.fromBigInt(paidAmount),description:`Inventory purchase ${number}`,status:"posted",sourceType:"inventory_receipt",createdAt:now,createdBy:actorId},{session});
   await database.collection("audit_logs").insertOne({actorId,action:"post",entity:"inventory_receipt",entityId:number,metadata:{subtotalPaisa:subtotal.toString(),paidAmountPaisa:paidAmount.toString()},createdAt:now},{session});const result={transactionNo:number,subtotalPaisa:subtotal.toString(),paidAmountPaisa:paidAmount.toString(),balances};await database.collection("idempotency_records").insertOne({key:input.idempotencyKey,operation:"inventory_receipt",result,createdAt:now},{session});return result;
-}).catch(error=>{if(duplicate(error))throw new Error("This inventory receipt was already saved. Refresh to see it in history.");throw error})}
+    });
+    // Transaction completed successfully
+    console.log(JSON.stringify({ event: "postInventoryReceipt:success", idempotencyKey: input.idempotencyKey }));
+  } catch (error) {
+    if (duplicate(error)) {
+      // If a concurrent request inserted the idempotency record, return its stored result
+      const database = await db();
+      const previous = await database.collection("idempotency_records").findOne({ key: input.idempotencyKey });
+      console.log(JSON.stringify({ event: "postInventoryReceipt:duplicate", idempotencyKey: input.idempotencyKey, foundPrevious: Boolean(previous) }));
+      if (previous) return previous.result as { transactionNo: string; subtotalPaisa: string; paidAmountPaisa: string; balances: Array<{ sku: string; stockMilli: string; averageCostPaisa: string; retailRatePaisa: string }> };
+      throw new Error("This inventory receipt was already saved. Refresh to see it in history.");
+    }
+    console.error(JSON.stringify({ event: "postInventoryReceipt:error", idempotencyKey: input.idempotencyKey, message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined }));
+    throw error;
+  }
+}
 
 export async function reverseInventoryReceipt(transactionNumber:string,reason:string,actorId:string){
   if(reason.trim().length<5)throw new Error("Enter a clear reversal reason.");

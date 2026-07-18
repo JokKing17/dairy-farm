@@ -2,15 +2,19 @@ import { Long, ObjectId, type Document } from "mongodb";
 import { z } from "zod";
 import { transaction } from "../db";
 import { transactionNo } from "../ids";
+import { eggSaleCalculation, normalizeEggQuantity, validatePiecesPerTray } from "../egg-units";
 import {
   integerToBigInt,
   multiplyQuantityRate,
   quantityToMilli,
 } from "../money";
 
+const EGG_SKU = "EGG-001";
+
 const lineSchema = z.object({
   sku: z.string().trim().min(1).max(30),
   quantity: z.string().max(20),
+  saleUnit: z.enum(["piece", "tray"]).optional(),
   yogurtFormat: z.enum(["loose", "3", "3.5", "custom"]).default("loose"),
   customKundaSize: z.string().max(20).optional(),
 });
@@ -57,10 +61,18 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
     }
     if (input.paymentType === "credit" && !customer)
       throw new Error("Credit / Udhaar requires a saved Shop Customer.");
-    if (
-      new Set(input.lines.map((line) => line.sku)).size !== input.lines.length
-    )
-      throw new Error("Combine duplicate product lines before posting.");
+    const seenLineKeys = new Set<string>();
+    for (const line of input.lines) {
+      const key =
+        line.sku === EGG_SKU
+          ? `${line.sku}:${line.saleUnit ?? ""}`
+          : line.sku === "YOG-001"
+            ? `${line.sku}:${line.yogurtFormat}:${line.customKundaSize ?? ""}`
+            : line.sku;
+      if (seenLineKeys.has(key))
+        throw new Error("Combine duplicate product lines before posting.");
+      seenLineKeys.add(key);
+    }
     const products = await database
         .collection("products")
         .find(
@@ -79,7 +91,10 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
     let total = 0n,
       totalCogs = 0n,
       lineNo = 0,
-      packagingLineNo = 0;
+      packagingLineNo = 0,
+      eggQuantityMilli = 0n,
+      eggProduct: Document | null = null,
+      eggStockMilli = 0n;
     for (const line of input.lines) {
       const product = bySku.get(line.sku);
       if (
@@ -96,9 +111,43 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
       const entered = quantityToMilli(line.quantity);
       if (entered <= 0n)
         throw new Error(`Enter a valid quantity for ${String(product.name)}.`);
-      let quantityMilli = entered,
-        packaging: Document | null = null;
-      if (line.sku === "YOG-001" && line.yogurtFormat !== "loose") {
+        let quantityMilli = entered;
+      let packaging: Document | null = null;
+      let enteredQuantity = entered;
+      let enteredUnit = String(product.unit);
+      let sellingRatePerEnteredUnitPaisa = integerToBigInt(product.retailRatePaisa);
+      const unitCostPaisa = integerToBigInt(product.averageCostPaisa);
+      const pieceSellingRateSnapshotPaisa = integerToBigInt(product.pieceSellingRatePaisa, integerToBigInt(product.retailRatePaisa));
+      const traySellingRateSnapshotPaisa = integerToBigInt(product.traySellingRatePaisa);
+      const piecesPerTraySnapshot = validatePiecesPerTray(product.piecesPerTray);
+      let normalizedPieceQuantity = entered;
+      let lineAmountPaisa = multiplyQuantityRate(entered, sellingRatePerEnteredUnitPaisa);
+      let costOfGoodsSoldPaisa = multiplyQuantityRate(entered, unitCostPaisa);
+      let grossProfitPaisa = lineAmountPaisa - costOfGoodsSoldPaisa;
+      if (line.sku === EGG_SKU) {
+        if (!line.saleUnit)
+          throw new Error("Select whether Eggs are sold by piece or tray.");
+        const normalized = normalizeEggQuantity(line.quantity, line.saleUnit, piecesPerTraySnapshot),
+          calculated = eggSaleCalculation({
+            enteredQuantity: normalized.enteredQuantity,
+            enteredUnit: normalized.enteredUnit,
+            piecesPerTray: piecesPerTraySnapshot,
+            pieceRatePaisa: pieceSellingRateSnapshotPaisa,
+            trayRatePaisa: traySellingRateSnapshotPaisa,
+            averageCostPerPiecePaisa: unitCostPaisa,
+          });
+        enteredQuantity = normalized.enteredQuantity;
+        enteredUnit = normalized.enteredUnit;
+        quantityMilli = calculated.normalizedQuantityMilli;
+        normalizedPieceQuantity = calculated.normalizedPieces;
+        sellingRatePerEnteredUnitPaisa = calculated.sellingRatePerEnteredUnitPaisa;
+        lineAmountPaisa = calculated.lineAmountPaisa;
+        costOfGoodsSoldPaisa = calculated.costOfGoodsSoldPaisa;
+        grossProfitPaisa = calculated.grossProfitPaisa;
+        eggQuantityMilli += quantityMilli;
+        eggProduct ??= product;
+        eggStockMilli = integerToBigInt(product.stockMilli);
+      } else if (line.sku === "YOG-001" && line.yogurtFormat !== "loose") {
         const size =
             line.yogurtFormat === "custom"
               ? quantityToMilli(line.customKundaSize ?? "")
@@ -172,43 +221,54 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
           remaining -= used;
         }
       }
-      const rate = integerToBigInt(product.retailRatePaisa),
-        cost = integerToBigInt(product.averageCostPaisa);
+      const rate = line.sku === EGG_SKU ? sellingRatePerEnteredUnitPaisa : integerToBigInt(product.retailRatePaisa),
+        cost = line.sku === EGG_SKU ? unitCostPaisa : integerToBigInt(product.averageCostPaisa);
       if (rate <= 0n)
         throw new Error(
           `Set a selling price for ${String(product.name)} first.`,
         );
-      const stock = integerToBigInt(product.stockMilli);
-      if (stock < quantityMilli)
-        throw new Error(
-          `Not enough ${String(product.name)} stock. Available: ${stock} milli-${String(product.unit)}.`,
-        );
-      const updated = await database
-        .collection("products")
-        .updateOne(
-          { _id: product._id, stockMilli: product.stockMilli },
-          {
-            $inc: { stockMilli: Long.fromBigInt(-quantityMilli) },
-            $set: { updatedAt: now, updatedBy: actorId },
-          },
-          { session },
-        );
-      if (!updated.modifiedCount)
-        throw new Error(
-          `${String(product.name)} stock changed. Review and try again.`,
-        );
-      const amount = multiplyQuantityRate(quantityMilli, rate),
-        cogs = multiplyQuantityRate(quantityMilli, cost),
-        profit = amount - cogs;
+      if (line.sku !== EGG_SKU) {
+        const stock = integerToBigInt(product.stockMilli);
+        if (stock < quantityMilli)
+          throw new Error(
+            `Not enough ${String(product.name)} stock. Available: ${stock} milli-${String(product.unit)}.`,
+          );
+        const updated = await database
+          .collection("products")
+          .updateOne(
+            { _id: product._id, stockMilli: product.stockMilli },
+            {
+              $inc: { stockMilli: Long.fromBigInt(-quantityMilli) },
+              $set: { updatedAt: now, updatedBy: actorId },
+            },
+            { session },
+          );
+        if (!updated.modifiedCount)
+          throw new Error(
+            `${String(product.name)} stock changed. Review and try again.`,
+          );
+      }
+      const amount = line.sku === EGG_SKU ? lineAmountPaisa : multiplyQuantityRate(quantityMilli, rate),
+        cogs = line.sku === EGG_SKU ? costOfGoodsSoldPaisa : multiplyQuantityRate(quantityMilli, cost),
+        profit = line.sku === EGG_SKU ? grossProfitPaisa : amount - cogs;
       total += amount;
       totalCogs += cogs;
       storedLines.push({
         productId: product._id,
         productSku: line.sku,
         productName: String(product.name),
-        unit: String(product.unit),
+        unit: line.sku === EGG_SKU ? enteredUnit : String(product.unit),
+        enteredQuantity: line.sku === EGG_SKU ? Long.fromBigInt(enteredQuantity) : undefined,
+        enteredUnit: line.sku === EGG_SKU ? enteredUnit : undefined,
+        piecesPerTraySnapshot: line.sku === EGG_SKU ? piecesPerTraySnapshot : undefined,
+        normalizedPieceQuantity: line.sku === EGG_SKU ? Long.fromBigInt(normalizedPieceQuantity) : undefined,
         quantityMilli: Long.fromBigInt(quantityMilli),
+        normalizedQuantityMilli: line.sku === EGG_SKU ? Long.fromBigInt(quantityMilli) : undefined,
         sellingRatePaisa: Long.fromBigInt(rate),
+        sellingRatePerEnteredUnitPaisa: line.sku === EGG_SKU ? Long.fromBigInt(sellingRatePerEnteredUnitPaisa) : undefined,
+        pieceSellingRateSnapshotPaisa: line.sku === EGG_SKU ? Long.fromBigInt(pieceSellingRateSnapshotPaisa) : undefined,
+        traySellingRateSnapshotPaisa: line.sku === EGG_SKU ? Long.fromBigInt(traySellingRateSnapshotPaisa) : undefined,
+        averageCostPerPiecePaisa: line.sku === EGG_SKU ? Long.fromBigInt(unitCostPaisa) : undefined,
         unitCostPaisa: Long.fromBigInt(cost),
         lineAmountPaisa: Long.fromBigInt(amount),
         costOfGoodsSoldPaisa: Long.fromBigInt(cogs),
@@ -223,7 +283,15 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
         location: "main-shop",
         type: "shop-sale",
         quantityMilli: Long.fromBigInt(-quantityMilli),
+        enteredQuantity: line.sku === EGG_SKU ? Long.fromBigInt(enteredQuantity) : undefined,
+        enteredUnit: line.sku === EGG_SKU ? enteredUnit : undefined,
+        piecesPerTray: line.sku === EGG_SKU ? piecesPerTraySnapshot : undefined,
+        normalizedPieces: line.sku === EGG_SKU ? Long.fromBigInt(normalizedPieceQuantity) : undefined,
         unitSaleRatePaisa: Long.fromBigInt(rate),
+        sellingRatePerEnteredUnitPaisa: line.sku === EGG_SKU ? Long.fromBigInt(sellingRatePerEnteredUnitPaisa) : undefined,
+        pieceSellingRateSnapshotPaisa: line.sku === EGG_SKU ? Long.fromBigInt(pieceSellingRateSnapshotPaisa) : undefined,
+        traySellingRateSnapshotPaisa: line.sku === EGG_SKU ? Long.fromBigInt(traySellingRateSnapshotPaisa) : undefined,
+        averageCostPerPiecePaisa: line.sku === EGG_SKU ? Long.fromBigInt(unitCostPaisa) : undefined,
         unitCostPaisa: Long.fromBigInt(cost),
         revenuePaisa: Long.fromBigInt(amount),
         costOfGoodsSoldPaisa: Long.fromBigInt(cogs),
@@ -233,6 +301,24 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
         createdAt: now,
         createdBy: actorId,
       });
+    }
+    if (eggProduct) {
+      if (eggStockMilli < eggQuantityMilli)
+        throw new Error(
+          `Not enough ${String(eggProduct.name)} stock. Available: ${eggStockMilli} milli-piece.`,
+        );
+      const updated = await database.collection("products").updateOne(
+        { _id: eggProduct._id, stockMilli: eggProduct.stockMilli },
+        {
+          $inc: { stockMilli: Long.fromBigInt(-eggQuantityMilli) },
+          $set: { updatedAt: now, updatedBy: actorId },
+        },
+        { session },
+      );
+      if (!updated.modifiedCount)
+        throw new Error(
+          `${String(eggProduct.name)} stock changed. Review and try again.`,
+        );
     }
     const grossProfit = total - totalCogs,
       customerId = customer?._id ?? null;

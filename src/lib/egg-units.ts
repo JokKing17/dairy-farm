@@ -4,7 +4,10 @@ export const DEFAULT_EGGS_PER_TRAY=30;
 export type EggUnit="piece"|"tray";
 
 export function validatePiecesPerTray(value:unknown,max=120){
-  const parsed=Number(integerToBigInt(value,BigInt(DEFAULT_EGGS_PER_TRAY)));
+  if(value===undefined||value===null||value==="")return DEFAULT_EGGS_PER_TRAY;
+  const text=String(value).trim();
+  if(!/^\d+$/.test(text))throw new Error(`Eggs per tray must be a whole number between 1 and ${max}.`);
+  const parsed=Number(text);
   if(!Number.isSafeInteger(parsed)||parsed<1||parsed>max)throw new Error(`Eggs per tray must be a whole number between 1 and ${max}.`);
   return parsed;
 }
