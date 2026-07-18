@@ -1,5 +1,5 @@
 "use server";
-import { Long } from "mongodb";
+import { Long, ObjectId } from "mongodb";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth";
@@ -16,6 +16,7 @@ const customerSchema=z.object({name:z.string().trim().min(2),phone:z.string().tr
     if(!value.startDate)context.addIssue({code:"custom",path:["startDate"],message:"Select the delivery start date."});
   }
 });
+const customerUpdateSchema=customerSchema.extend({id:z.string().min(1),active:z.string().optional()});
 
 export async function createCustomer(_:ActionState,data:FormData):Promise<ActionState>{
   const actor=await requireSession(["owner","manager","accountant"]); const parsed=customerSchema.safeParse(Object.fromEntries(data));
@@ -32,3 +33,22 @@ export async function createCustomer(_:ActionState,data:FormData):Promise<Action
 }
 
 export async function recordCustomerPayment(_:ActionState,data:FormData):Promise<ActionState>{const actor=await requireSession(["owner","manager","accountant","cashier"]);const parsed=paymentSchema.safeParse(Object.fromEntries(data));if(!parsed.success)return{error:"Check the payment amount and method."};try{const result=await postPayment(parsed.data,actor.userId);revalidatePath("/customers");revalidatePath("/cashbook");return{success:`Receipt ${result.transactionNo}`};}catch(error){return{error:error instanceof Error?error.message:"Payment could not be recorded."};}}
+
+export async function updateCustomer(_:ActionState,data:FormData):Promise<ActionState>{
+  const actor=await requireSession(["owner","manager","accountant"]),parsed=customerUpdateSchema.safeParse(Object.fromEntries(data));
+  if(!parsed.success)return{error:parsed.error.issues[0]?.message??"Check the customer details."};
+  try{
+    const customerId=new ObjectId(parsed.data.id),household=parsed.data.customerType==="household",quantity=household?quantityToMilli(parsed.data.dailyQuantity??""):0n,rate=household&&parsed.data.milkRate?.trim()?rupeesToPaisa(parsed.data.milkRate):null;
+    const days=household?parsed.data.deliveryDays.split(",").map(Number).filter(day=>Number.isInteger(day)&&day>=1&&day<=7):[]; if(household&&!days.length)return{error:"Select at least one delivery day."};
+    await transaction(async(database,session)=>{const now=new Date(),existing=await database.collection("customers").findOne({_id:customerId},{session});if(!existing)throw new Error("Customer not found.");const startDate=household?(parsed.data.startDate??existing.startDate??new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Karachi"}).format(now)):null;
+      await database.collection("customers").updateOne({_id:customerId},{$set:{name:parsed.data.name,phone:parsed.data.phone||null,whatsapp:parsed.data.whatsapp||null,address:parsed.data.address||null,customerType:parsed.data.customerType,defaultQuantityMilli:Long.fromBigInt(quantity),deliveryDays:days,startDate,paused:household&&parsed.data.paused==="on",deliverySequence:household&&parsed.data.deliverySequence?Number(parsed.data.deliverySequence):null,notes:parsed.data.notes||null,active:parsed.data.active==="on",updatedAt:now,updatedBy:actor.userId}},{session});
+      if(rate!==null){const current=await database.collection("customer_rate_history").findOne({customerId,effectiveTo:null},{session,sort:{effectiveFrom:-1}});if(current?.ratePaisa?.toString()!==rate.toString()){const effectiveFrom=new Date(`${startDate}T00:00:00Z`);await database.collection("customer_rate_history").updateMany({customerId,effectiveTo:null},{$set:{effectiveTo:effectiveFrom,updatedAt:now,updatedBy:actor.userId}},{session});await database.collection("customer_rate_history").insertOne({customerId,previousRatePaisa:current?.ratePaisa??null,ratePaisa:Long.fromBigInt(rate),effectiveFrom,effectiveTo:null,reason:"Customer details updated",createdAt:now,createdBy:actor.userId},{session});}}
+      await database.collection("audit_logs").insertOne({actorId:actor.userId,action:"update",entity:"customer",entityId:customerId,createdAt:now},{session});
+    });revalidatePath("/customers");revalidatePath("/deliveries");revalidatePath("/sales");return{success:"Customer updated."};
+  }catch(error){return{error:error instanceof Error?error.message:"Customer could not be updated."};}
+}
+
+export async function deactivateCustomer(_:ActionState,data:FormData):Promise<ActionState>{
+  const actor=await requireSession(["owner"]),id=String(data.get("id")??"");
+  try{await transaction(async(database,session)=>{const customerId=new ObjectId(id),now=new Date(),result=await database.collection("customers").updateOne({_id:customerId,active:true},{$set:{active:false,paused:true,deactivatedAt:now,deactivatedBy:actor.userId,updatedAt:now,updatedBy:actor.userId}},{session});if(!result.modifiedCount)throw new Error("Customer is missing or already inactive.");await database.collection("audit_logs").insertOne({actorId:actor.userId,action:"deactivate",entity:"customer",entityId:customerId,createdAt:now},{session});});revalidatePath("/customers");revalidatePath("/deliveries");revalidatePath("/sales");return{success:"Customer deactivated."};}catch(error){return{error:error instanceof Error?error.message:"Customer could not be deactivated."};}
+}

@@ -87,9 +87,9 @@ async function migrateProductInventoryRules() {
   const configurations=[
     {sku:"MILK-001",name:"Fresh Milk",unit:"liter",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"},
     {sku:"YOG-001",name:"Yogurt / Dahi",unit:"kilogram",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"yogurt-production"},
-    {sku:"BREAD-001",name:"Bread",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
+    {sku:"BREAD-001",name:"Bread Packets",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
     {sku:"EGG-001",name:"Eggs",unit:"piece",baseUnit:"piece",purchaseUnit:"tray",saleUnits:["piece","tray"],piecesPerTray:30,defaultSaleUnit:"piece",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
-    {sku:"ISPAGHOL-001",name:"Ispaghol / Psyllium Husk",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
+    {sku:"ISPAGHOL-001",name:"Ispaghol Husk Packets",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
     {sku:"KUNDA-001",name:"Kunda Dahi",unit:"pot",category:"internal",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true},
     {sku:"GL-001",name:"Gold Leaf",unit:"packet",category:"disabled",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false},
   ];

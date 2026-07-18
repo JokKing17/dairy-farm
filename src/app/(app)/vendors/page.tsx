@@ -2,12 +2,14 @@ import { db } from "@/lib/db";
 import { addDays } from "@/lib/date-utils";
 import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
-import { VendorForm } from "./vendor-form";
+import { VendorActions, VendorForm } from "./vendor-form";
 import { FilterToolbar, PageHeader, SearchField, SectionHeader } from "@/components/ui";
 import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
 import { ClearSearch } from "@/components/clear-search";
 
 export const dynamic = "force-dynamic";
+
+const paisaInput = (value: unknown) => String(Number(integerToBigInt(value)) / 100);
 
 export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string }> }) {
   const { from, to, q: rawQuery } = await searchParams;
@@ -19,6 +21,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
     { $sort: { name: 1 } },
     { $limit: 100 },
     { $lookup: { from: "party_ledger_entries", localField: "_id", foreignField: "partyId", as: "ledger" } },
+    { $lookup: { from: "vendor_rate_history", let: { id: "$_id" }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ["$vendorId", "$$id"] }, { $eq: ["$productSku", "MILK-001"] }, { $eq: ["$effectiveTo", null] }] } } }, { $sort: { effectiveFrom: -1 } }, { $limit: 1 }], as: "rate" } },
   ];
   if (from || to) {
     const gte = from ?? "2000-01-01";
@@ -28,7 +31,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
   } else {
     pipeline.push({ $addFields: { payable: { $sum: { $map: { input: "$ledger", as: "line", in: { $subtract: ["$$line.creditPaisa", "$$line.debitPaisa"] } } } } } });
   }
-  pipeline.push({ $project: { code: 1, name: 1, phone: 1, active: 1, payable: 1 } });
+  pipeline.push({ $project: { code: 1, name: 1, phone: 1, whatsapp: 1, address: 1, notes: 1, active: 1, payable: 1, ratePaisa: { $first: "$rate.ratePaisa" } } });
   const vendors = await database.collection("vendors").aggregate(pipeline).toArray();
 
   return (
@@ -49,8 +52,8 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
       <div className="card table-card">
         {vendors.length === 0 ? <div className="empty-state"><b>No vendors yet</b><span>Add the first supplier above to begin procurement.</span></div> : (
           <table className="table">
-            <thead><tr><th>Code</th><th>Vendor</th><th>Phone</th><th>Current payable</th><th>Status</th></tr></thead>
-            <tbody>{vendors.map((vendor) => <tr key={vendor._id.toString()}><td><b>{vendor.code}</b></td><td>{vendor.name}</td><td>{vendor.phone || "—"}</td><td>{formatPKR(integerToBigInt(vendor.payable))}</td><td><span className="badge">{vendor.active ? "Active" : "Inactive"}</span></td></tr>)}</tbody>
+            <thead><tr><th>Code</th><th>Vendor</th><th>Phone</th><th>Current payable</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>{vendors.map((vendor) => <tr key={vendor._id.toString()}><td><b>{vendor.code}</b></td><td>{vendor.name}</td><td>{vendor.phone || "—"}</td><td>{formatPKR(integerToBigInt(vendor.payable))}</td><td><span className="badge">{vendor.active ? "Active" : "Inactive"}</span></td><td><VendorActions vendor={{ id: vendor._id.toString(), code: String(vendor.code), name: String(vendor.name), phone: String(vendor.phone ?? ""), whatsapp: String(vendor.whatsapp ?? ""), address: String(vendor.address ?? ""), notes: String(vendor.notes ?? ""), active: Boolean(vendor.active), milkRate: paisaInput(vendor.ratePaisa) }} /></td></tr>)}</tbody>
           </table>
         )}
       </div>
