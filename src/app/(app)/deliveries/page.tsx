@@ -11,7 +11,7 @@ export default async function DailyDeliveriesPage() {
   const database = await db();
   const now = new Date();
   const businessDate = karachiBusinessDate();
-  const [customers, settings, products, existingBatch] = await Promise.all([
+  const [customers, settings, products, existingBatch, postedDeliveries] = await Promise.all([
     database.collection("customers").aggregate([
       { $match: { active: true, customerType: "household" } },
       {
@@ -37,10 +37,13 @@ export default async function DailyDeliveriesPage() {
     database.collection("business_settings").findOne({ _id: "default" as never }),
     database.collection("products").find(DAILY_DELIVERY_CATALOG_FILTER).toArray(),
     database.collection("delivery_batches").findOne({ businessDate, status: "posted" }),
+    database.collection("customer_deliveries").find({ businessDate, status: "posted" }, { projection: { customerId: 1 } }).toArray(),
   ]);
 
   const defaultRate = integerToBigInt(settings?.customerRatePaisa);
-  const customerRows = customers.map((customer) => ({
+  const postedCustomerIds = new Set(postedDeliveries.map((delivery) => delivery.customerId?.toString()));
+  const pendingCustomers = existingBatch ? customers.filter((customer) => !postedCustomerIds.has(customer._id.toString())) : customers;
+  const customerRows = pendingCustomers.map((customer) => ({
     id: customer._id.toString(),
     code: String(customer.code),
     name: String(customer.name),
@@ -98,13 +101,16 @@ export default async function DailyDeliveriesPage() {
   return (
     <div className="content">
       <PageHeader title="Daily Deliveries" description="One simple household list for today. Normal Milk quantities are pre-filled."/>
-      {existingBatch ? (
+      {existingBatch && !customerRows.length ? (
         <div className="card table-card form-success">
           <b>Today was already posted as {String(existingBatch.transactionNo)}</b>
           <span>Duplicate delivery charges are blocked.</span>
         </div>
       ) : customerRows.length ? (
-        <DeliverySheet customers={customerRows} products={productRows} today={businessDate} />
+        <>
+          {existingBatch ? <div className="card table-card form-success"><b>Today was already posted as {String(existingBatch.transactionNo)}</b><span>{customerRows.length} newly added household customer{customerRows.length === 1 ? "" : "s"} still need delivery posting.</span></div> : null}
+          <DeliverySheet customers={customerRows} products={productRows} today={businessDate} />
+        </>
       ) : (
         <div className="card table-card empty-state">
           <b>No active household customers</b>

@@ -39,9 +39,14 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
     if (new Set(input.lines.map((line) => line.customerId)).size !== input.lines.length) throw new Error("A customer appears more than once in this delivery sheet.");
     const activeHouseholds = await database.collection("customers").find({ active: true, customerType: "household" }, { session, projection: { _id: 1 } }).toArray();
     const submittedCustomers = new Set(input.lines.map((line) => line.customerId));
-    if (activeHouseholds.length !== input.lines.length || activeHouseholds.some((customer) => !submittedCustomers.has(customer._id.toString()))) throw new Error("The household customer list changed. Refresh the page before posting.");
     const existing = await database.collection("delivery_batches").findOne({ businessDate: input.businessDate, status: "posted" }, { session });
-    if (existing) throw new Error(`Today's deliveries were already posted as ${String(existing.transactionNo)}.`);
+    if (existing) {
+      const postedDeliveries = await database.collection("customer_deliveries").find({ businessDate: input.businessDate, status: "posted" }, { session, projection: { customerId: 1 } }).toArray();
+      const postedCustomerIds = new Set(postedDeliveries.map((delivery) => delivery.customerId?.toString()));
+      const pendingHouseholds = activeHouseholds.filter((customer) => !postedCustomerIds.has(customer._id.toString()));
+      if (!pendingHouseholds.length) throw new Error(`Today's deliveries were already posted as ${String(existing.transactionNo)}.`);
+      if (pendingHouseholds.length !== input.lines.length || pendingHouseholds.some((customer) => !submittedCustomers.has(customer._id.toString()))) throw new Error("Only newly added household customers can be added to an already-posted delivery day. Refresh the page before posting.");
+    } else if (activeHouseholds.length !== input.lines.length || activeHouseholds.some((customer) => !submittedCustomers.has(customer._id.toString()))) throw new Error("The household customer list changed. Refresh the page before posting.");
 
     const settings = await database.collection("business_settings").findOne({ _id: "default" as never }, { session });
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: String(settings?.timezone ?? "Asia/Karachi"), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -55,7 +60,12 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
     if (!products.has("MILK-001")) throw new Error("Fresh Milk is not initialized. Run the seed command.");
 
     const now = new Date();
-    const number = transactionNo("DEL");
+    const number = existing ? String(existing.transactionNo) : transactionNo("DEL");
+    const [lastDeliveryLine, lastInventoryLine] = existing ? await Promise.all([
+      database.collection("customer_deliveries").find({ transactionNo: number }, { session }).sort({ lineNo: -1 }).limit(1).next(),
+      database.collection("inventory_movements").find({ transactionNo: number }, { session }).sort({ lineNo: -1 }).limit(1).next(),
+    ]) : [null, null];
+    const baseDeliveryLineNo = Number(lastDeliveryLine?.lineNo ?? 0);
     const deliveryDocuments: Document[] = [];
     const ledgerDocuments: Document[] = [];
     const inventoryDocuments: Document[] = [];
@@ -64,7 +74,7 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
     let totalAmountPaisa = 0n;
     let deliveredCustomers = 0;
     let skippedCustomers = 0;
-    let inventoryLineNo = 0;
+    let inventoryLineNo = Number(lastInventoryLine?.lineNo ?? 0);
 
     for (const [index, line] of input.lines.entries()) {
       const customerId = new ObjectId(line.customerId);
@@ -129,7 +139,7 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
         inventoryDocuments.push({ transactionNo: number, lineNo: ++inventoryLineNo, productSku: "MILK-001", location: "main-shop", type: "customer-delivery", quantityMilli: Long.fromBigInt(-calculation.milkQuantityMilli), unitSaleRatePaisa: Long.fromBigInt(ratePaisa), unitCostPaisa: Long.fromBigInt(milkCost), revenuePaisa: Long.fromBigInt(calculation.milkAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(milkCogs), grossProfitPaisa: Long.fromBigInt(calculation.milkAmountPaisa - milkCogs), businessDate: input.businessDate, date: now, status: "posted", sourceCustomerId: customerId, createdAt: now, createdBy: actorId });
       }
 
-      const lineNo = index + 1;
+      const lineNo = baseDeliveryLineNo + index + 1;
       deliveryDocuments.push({ transactionNo: number, lineNo, customerId, businessDate: input.businessDate, milkQuantityMilli: Long.fromBigInt(calculation.milkQuantityMilli), milkRatePaisa: Long.fromBigInt(wasDelivered ? ratePaisa : 0n), milkAmountPaisa: Long.fromBigInt(calculation.milkAmountPaisa), otherProducts: snapshottedProducts, otherAmountPaisa: Long.fromBigInt(calculation.otherAmountPaisa), amountPaisa: Long.fromBigInt(calculation.totalAmountPaisa), deliveryStatus: line.deliveryStatus, notes: line.notes || null, status: "posted", createdAt: now, createdBy: actorId });
       if (calculation.totalAmountPaisa > 0n) ledgerDocuments.push({ transactionNo: number, lineNo, partyType: "customer", partyId: customerId, businessDate: input.businessDate, date: now, debitPaisa: Long.fromBigInt(calculation.totalAmountPaisa), creditPaisa: Long.ZERO, description: "Daily household delivery", status: "posted", createdAt: now, createdBy: actorId });
       totalMilkMilli += calculation.milkQuantityMilli;
@@ -142,17 +152,25 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
       if (!result.modifiedCount) throw new Error(`Not enough ${String(products.get(sku)?.name ?? sku)} stock for today's deliveries.`);
     }
     const totalCostOfGoodsSoldPaisa = inventoryDocuments.reduce((sum, movement) => sum + integerToBigInt(movement.costOfGoodsSoldPaisa), 0n), grossProfitPaisa = totalAmountPaisa - totalCostOfGoodsSoldPaisa;
-    await database.collection("delivery_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
+    if (existing) {
+      await database.collection("delivery_batches").updateOne({ _id: existing._id, status: "posted" }, { $inc: { deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa) }, $set: { updatedAt: now, updatedBy: actorId } }, { session });
+    } else {
+      await database.collection("delivery_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, deliveredCustomers, skippedCustomers, totalMilkMilli: Long.fromBigInt(totalMilkMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
+    }
     await database.collection("customer_deliveries").insertMany(deliveryDocuments, { session });
     if (ledgerDocuments.length) await database.collection("party_ledger_entries").insertMany(ledgerDocuments, { session });
     if (inventoryDocuments.length) await database.collection("inventory_movements").insertMany(inventoryDocuments, { session });
-    await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
+    if (existing) {
+      await database.collection("financial_transactions").updateOne({ transactionNo: number, kind: "customer_delivery", status: "posted" }, { $inc: { amountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa) }, $set: { updatedAt: now, updatedBy: actorId } }, { session });
+    } else {
+      await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
+    }
     if (skippedCustomers > 0) await database.collection("notifications").insertOne({ title: "Today's household deliveries are incomplete.", message: `${skippedCustomers} customer${skippedCustomers === 1 ? " was" : "s were"} skipped or paused.`, severity: "warning", status: "open", relatedType: "daily_delivery_batch", relatedId: number, relatedHref: "/deliveries", createdAt: now, createdBy: actorId }, { session });
-    await database.collection("audit_logs").insertOne({ actorId, action: "post", entity: "daily_delivery_batch", entityId: number, metadata: { businessDate: input.businessDate, deliveredCustomers, skippedCustomers }, createdAt: now }, { session });
+    await database.collection("audit_logs").insertOne({ actorId, action: existing ? "supplement" : "post", entity: "daily_delivery_batch", entityId: number, metadata: { businessDate: input.businessDate, deliveredCustomers, skippedCustomers }, createdAt: now }, { session });
     const result = { transactionNo: number, deliveredCustomers, skippedCustomers, totalMilkMilli: totalMilkMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };
     await database.collection("idempotency_records").insertOne({ key: input.idempotencyKey, operation: "daily_deliveries", result, createdAt: now }, { session });
     return result;
-  }).catch((error) => { if (duplicateError(error)) throw new Error("These deliveries were already posted. Refresh to see the existing receipt."); throw error; });
+  }).catch((error) => { if (duplicateError(error)) throw new Error("These deliveries were already posted for one of the selected customers. Refresh to see the latest delivery sheet."); throw error; });
 }
 
 export async function reverseDailyDeliveries(transactionNumber: string, reason: string, actorId: string) {
