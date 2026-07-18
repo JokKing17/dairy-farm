@@ -9,12 +9,19 @@ import { eggPurchaseCalculation, normalizeEggQuantity, validatePiecesPerTray } f
 const lineSchema=z.object({productSku:z.string().max(30),quantity:z.string(),buyingPrice:z.string(),sellingPrice:z.string().optional(),keepExistingSellingPrice:z.boolean().default(false),receivingUnit:z.enum(["piece","tray"]).optional(),pieceSellingPrice:z.string().optional(),traySellingPrice:z.string().optional()});
 export const inventoryReceiptSchema=z.object({businessDate:z.iso.date(),idempotencyKey:z.uuid(),supplierName:z.string().trim().max(120).optional(),supplierReference:z.string().trim().max(120).optional(),paymentStatus:z.enum(["paid","partial","unpaid"]),paymentMethod:z.enum(["cash","bank","easypaisa","jazzcash"]).optional(),paidAmount:z.string().optional(),notes:z.string().trim().max(500).optional(),attachmentKey:z.string().max(500).optional(),lines:z.array(lineSchema).min(1).max(20)});
 export type InventoryReceiptInput=z.infer<typeof inventoryReceiptSchema>;
-const duplicate=(error:unknown)=>Boolean(error&&typeof error==="object"&&"code" in error&&error.code===11000);
 
-export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:string){
+type MongoDuplicateError = { code?: number; codeName?: string; keyPattern?: Record<string, unknown>; keyValue?: Record<string, unknown>; index?: string; errmsg?: string; message?: string };
+const duplicate=(error:unknown): error is MongoDuplicateError=>Boolean(error&&typeof error==="object"&&"code" in error&&((error as MongoDuplicateError).code===11000));
+const duplicateErrorInfo=(error:unknown)=>{
+  if(!duplicate(error))return null;
+  const err=error as MongoDuplicateError;
+  return { code: err.code, codeName: err.codeName, index: err.index, keyPattern: err.keyPattern, keyValue: err.keyValue, message: err.message||err.errmsg };
+};
+
+export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:string,retryAttempt = 0){
   const input = inventoryReceiptSchema.parse(raw);
   try {
-    console.log(JSON.stringify({ event: "postInventoryReceipt:start", idempotencyKey: input.idempotencyKey, skuCount: input.lines.length }));
+    console.log(JSON.stringify({ event: "postInventoryReceipt:start", idempotencyKey: input.idempotencyKey, skuCount: input.lines.length, retryAttempt }));
     return await transaction(async(database,session)=>{
   const previous=await database.collection("idempotency_records").findOne({key:input.idempotencyKey},{session});if(previous)return previous.result as {transactionNo:string;subtotalPaisa:string;paidAmountPaisa:string;balances:Array<{sku:string;stockMilli:string;averageCostPaisa:string;retailRatePaisa:string}>};
   const settings=await database.collection("business_settings").findOne({_id:"default" as never},{session}),today=new Intl.DateTimeFormat("en-CA",{timeZone:String(settings?.timezone??"Asia/Karachi"),year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),dayDifference=Math.round((new Date(`${today}T00:00:00Z`).getTime()-new Date(`${input.businessDate}T00:00:00Z`).getTime())/86_400_000),allowedBackdateDays=Number(settings?.allowedBackdateDays??3);if(dayDifference<0)throw new Error("Future inventory receipts are not allowed.");if(dayDifference>allowedBackdateDays)throw new Error(`Inventory receipts can only be backdated ${allowedBackdateDays} days.`);
@@ -56,23 +63,39 @@ export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:str
     // Transaction completed successfully
     console.log(JSON.stringify({ event: "postInventoryReceipt:success", idempotencyKey: input.idempotencyKey }));
   } catch (error) {
-    if (duplicate(error)) {
+    const duplicateInfo = duplicateErrorInfo(error);
+    if (duplicateInfo) {
+      console.error(JSON.stringify({ event: "postInventoryReceipt:duplicateError", idempotencyKey: input.idempotencyKey, retryAttempt, duplicateInfo }));
+      const isTransactionNoDuplicate = Boolean(duplicateInfo.keyPattern?.transactionNo || duplicateInfo.keyValue?.transactionNo);
+      if (isTransactionNoDuplicate && retryAttempt < 2) {
+        console.log(JSON.stringify({ event: "postInventoryReceipt:retry", idempotencyKey: input.idempotencyKey, retryAttempt: retryAttempt + 1, reason: "transactionNo_duplicate" }));
+        return postInventoryReceipt(raw, actorId, retryAttempt + 1);
+      }
       // If a concurrent request inserted the idempotency record, return its stored result
       const database = await db();
       const previous = await database.collection("idempotency_records").findOne({ key: input.idempotencyKey });
-      console.log(JSON.stringify({ event: "postInventoryReceipt:duplicate", idempotencyKey: input.idempotencyKey, foundPrevious: Boolean(previous) }));
+      console.log(JSON.stringify({ event: "postInventoryReceipt:duplicate", idempotencyKey: input.idempotencyKey, foundPrevious: Boolean(previous), duplicateInfo }));
       if (previous) return previous.result as { transactionNo: string; subtotalPaisa: string; paidAmountPaisa: string; balances: Array<{ sku: string; stockMilli: string; averageCostPaisa: string; retailRatePaisa: string }> };
       // If idempotency record is missing, try to find the inserted inventory receipt itself.
       const receipt = await database.collection("inventory_receipts").findOne({ idempotencyKey: input.idempotencyKey });
       if (receipt) {
-        console.log(JSON.stringify({ event: "postInventoryReceipt:foundReceipt", idempotencyKey: input.idempotencyKey, transactionNo: receipt.transactionNo }));
+        console.log(JSON.stringify({ event: "postInventoryReceipt:foundReceipt", idempotencyKey: input.idempotencyKey, transactionNo: receipt.transactionNo, duplicateInfo }));
+        const receiptLines = Array.isArray(receipt.lines) ? (receipt.lines as Array<Record<string, unknown>>) : [];
         const result = {
           transactionNo: receipt.transactionNo,
           subtotalPaisa: String(receipt.subtotalPaisa ?? receipt.subtotal ?? 0),
           paidAmountPaisa: String(receipt.paidAmountPaisa ?? receipt.paidAmount ?? 0),
-          balances: (receipt.lines ?? []).map((l: any) => ({ sku: l.productSku, stockMilli: String(l.resultingStockMilli ?? l.quantityMilli ?? 0), averageCostPaisa: String(l.resultingAverageCostPaisa ?? 0), retailRatePaisa: String(l.sellingUnitRatePaisa ?? l.pieceSellingRatePaisa ?? 0) })),
+          balances: receiptLines.map((line) => ({
+            sku: String(line.productSku ?? ""),
+            stockMilli: String(line.resultingStockMilli ?? line.quantityMilli ?? 0),
+            averageCostPaisa: String(line.resultingAverageCostPaisa ?? 0),
+            retailRatePaisa: String(line.sellingUnitRatePaisa ?? line.pieceSellingRatePaisa ?? 0),
+          })),
         };
         return result;
+      }
+      if (isTransactionNoDuplicate) {
+        throw new Error("Inventory receipt creation conflicted on transaction number. Please try again.");
       }
       throw new Error("This inventory receipt was already saved. Refresh to see it in history.");
     }
