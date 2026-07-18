@@ -7,14 +7,12 @@ import {
   multiplyQuantityRate,
   quantityToMilli,
 } from "../money";
-import { eggSaleCalculation, wholeEnteredQuantity, validatePiecesPerTray } from "../egg-units";
 
 const lineSchema = z.object({
   sku: z.string().trim().min(1).max(30),
   quantity: z.string().max(20),
   yogurtFormat: z.enum(["loose", "3", "3.5", "custom"]).default("loose"),
   customKundaSize: z.string().max(20).optional(),
-  saleUnit: z.enum(["piece","tray"]).optional(),
 });
 export const shopSaleSchema = z.object({
   businessDate: z.iso.date(),
@@ -59,8 +57,10 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
     }
     if (input.paymentType === "credit" && !customer)
       throw new Error("Credit / Udhaar requires a saved Shop Customer.");
-    const lineKeys=input.lines.map(line=>`${line.sku}:${line.sku==="EGG-001"?line.saleUnit??"":line.sku==="YOG-001"?line.yogurtFormat:"default"}`);
-    if(new Set(lineKeys).size!==lineKeys.length)throw new Error("Combine duplicate product and unit lines before posting.");
+    if (
+      new Set(input.lines.map((line) => line.sku)).size !== input.lines.length
+    )
+      throw new Error("Combine duplicate product lines before posting.");
     const products = await database
         .collection("products")
         .find(
@@ -172,15 +172,8 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
           remaining -= used;
         }
       }
-      let rate=integerToBigInt(product.retailRatePaisa),cost=integerToBigInt(product.averageCostPaisa),amount:bigint,cogs:bigint,eggSnapshot:Document|null=null;
-      if(line.sku==="EGG-001"){
-        if(line.saleUnit!=="piece"&&line.saleUnit!=="tray")throw new Error("Select whether Eggs are sold by piece or tray.");
-        const piecesPerTray=validatePiecesPerTray(product.piecesPerTray),enteredQuantity=wholeEnteredQuantity(line.quantity,line.saleUnit==="tray"?"Egg tray quantity":"Egg piece quantity"),calculation=eggSaleCalculation({enteredQuantity,enteredUnit:line.saleUnit,piecesPerTray,pieceRatePaisa:integerToBigInt(product.pieceSellingRatePaisa,product.retailRatePaisa),trayRatePaisa:integerToBigInt(product.traySellingRatePaisa),averageCostPerPiecePaisa:cost});
-        quantityMilli=calculation.normalizedQuantityMilli;rate=calculation.sellingRatePerEnteredUnitPaisa;amount=calculation.lineAmountPaisa;cogs=calculation.costOfGoodsSoldPaisa;eggSnapshot={enteredQuantity:Long.fromBigInt(enteredQuantity),enteredUnit:line.saleUnit,piecesPerTraySnapshot:piecesPerTray,normalizedPieceQuantity:Long.fromBigInt(calculation.normalizedPieces),normalizedQuantityMilli:Long.fromBigInt(quantityMilli),sellingRatePerEnteredUnitPaisa:Long.fromBigInt(rate),pieceSellingRateSnapshotPaisa:product.pieceSellingRatePaisa??product.retailRatePaisa,traySellingRateSnapshotPaisa:product.traySellingRatePaisa,averageCostPerPiecePaisa:Long.fromBigInt(cost)};
-      }else{
-        if(line.saleUnit)throw new Error("Egg sale units can only be used with Eggs.");
-        amount=multiplyQuantityRate(quantityMilli,rate);cogs=multiplyQuantityRate(quantityMilli,cost);
-      }
+      const rate = integerToBigInt(product.retailRatePaisa),
+        cost = integerToBigInt(product.averageCostPaisa);
       if (rate <= 0n)
         throw new Error(
           `Set a selling price for ${String(product.name)} first.`,
@@ -204,14 +197,15 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
         throw new Error(
           `${String(product.name)} stock changed. Review and try again.`,
         );
-      const profit = amount - cogs;
+      const amount = multiplyQuantityRate(quantityMilli, rate),
+        cogs = multiplyQuantityRate(quantityMilli, cost),
+        profit = amount - cogs;
       total += amount;
       totalCogs += cogs;
       storedLines.push({
         productId: product._id,
         productSku: line.sku,
         productName: String(product.name),
-        productNameSnapshot:String(product.name),
         unit: String(product.unit),
         quantityMilli: Long.fromBigInt(quantityMilli),
         sellingRatePaisa: Long.fromBigInt(rate),
@@ -220,7 +214,6 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
         costOfGoodsSoldPaisa: Long.fromBigInt(cogs),
         grossProfitPaisa: Long.fromBigInt(profit),
         yogurtPackaging: packaging,
-        ...(eggSnapshot??{}),
       });
       movements.push({
         transactionNo: number,
@@ -239,7 +232,6 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
         status: "posted",
         createdAt: now,
         createdBy: actorId,
-        ...(eggSnapshot?{enteredQuantity:eggSnapshot.enteredQuantity,enteredUnit:eggSnapshot.enteredUnit,piecesPerTray:eggSnapshot.piecesPerTraySnapshot,normalizedPieces:eggSnapshot.normalizedPieceQuantity}:{}),
       });
     }
     const grossProfit = total - totalCogs,

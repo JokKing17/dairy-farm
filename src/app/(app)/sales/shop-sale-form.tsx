@@ -7,7 +7,6 @@ import {
   multiplyQuantityRate,
   quantityToMilli,
 } from "@/lib/money";
-import { formatEggStock,normalizeEggQuantity } from "@/lib/egg-units";
 import {
   createShopSale,
   reverseSale,
@@ -20,10 +19,6 @@ type Product = {
   unit: string;
   ratePaisa: string;
   stockMilli: string;
-  piecesPerTray?:number;
-  pieceRatePaisa?:string;
-  trayRatePaisa?:string;
-  defaultSaleUnit?:"piece"|"tray";
 };
 type Customer = { id: string; name: string; code: string };
 type Line = {
@@ -32,7 +27,6 @@ type Line = {
   quantity: string;
   yogurtFormat: "loose" | "3" | "3.5" | "custom";
   customKundaSize: string;
-  saleUnit:"piece"|"tray";
 };
 export function ShopSaleForm({
   today,
@@ -62,7 +56,6 @@ export function ShopSaleForm({
         quantity: "",
         yogurtFormat: "loose",
         customKundaSize: "",
-        saleUnit:"piece",
       },
     ]);
   const bySku = useMemo(
@@ -71,7 +64,6 @@ export function ShopSaleForm({
     ),
     lineQuantity = (line: Line) => {
       const entered = quantityToMilli(line.quantity || "0");
-      if(line.sku==="EGG-001"){const product=bySku.get(line.sku);return normalizeEggQuantity(line.quantity,line.saleUnit,product?.piecesPerTray??30).normalizedQuantityMilli}
       if (line.sku !== "YOG-001" || line.yogurtFormat === "loose")
         return entered;
       const count = entered / 1000n,
@@ -85,9 +77,13 @@ export function ShopSaleForm({
     try {
       return lines.reduce((sum, line) => {
         const product = bySku.get(line.sku);
-        if(!product)return sum;
-        if(line.sku==="EGG-001"){const entered=quantityToMilli(line.quantity||"0")/1000n,rate=BigInt(line.saleUnit==="tray"?product.trayRatePaisa??"0":product.pieceRatePaisa??"0");return sum+entered*rate}
-        return sum+multiplyQuantityRate(lineQuantity(line),BigInt(product.ratePaisa));
+        return product
+          ? sum +
+              multiplyQuantityRate(
+                lineQuantity(line),
+                BigInt(product.ratePaisa),
+              )
+          : sum;
       }, 0n);
     } catch {
       return 0n;
@@ -106,12 +102,11 @@ export function ShopSaleForm({
       notes,
       lines: lines
         .filter((line) => line.sku && line.quantity)
-        .map(({ sku, quantity, yogurtFormat, customKundaSize,saleUnit }) => ({
+        .map(({ sku, quantity, yogurtFormat, customKundaSize }) => ({
           sku,
           quantity,
           yogurtFormat,
           customKundaSize,
-          saleUnit:sku==="EGG-001"?saleUnit:undefined,
         })),
     });
   return (
@@ -225,7 +220,6 @@ export function ShopSaleForm({
                       update(line.id, {
                         sku: event.target.value,
                         yogurtFormat: "loose",
-                        saleUnit:event.target.value==="EGG-001"?(products.find(item=>item.sku==="EGG-001")?.defaultSaleUnit??"piece"):"piece",
                       })
                     }
                   >
@@ -252,7 +246,6 @@ export function ShopSaleForm({
                       <option value="custom">Prepared custom Kunda</option>
                     </select>
                   ) : null}
-                  {line.sku==="EGG-001"?<label><span>Sell Eggs by</span><select value={line.saleUnit} onChange={event=>update(line.id,{saleUnit:event.target.value as Line["saleUnit"]})}><option value="piece">Piece</option><option value="tray">Tray</option></select></label>:null}
                   {line.yogurtFormat === "custom" && line.sku === "YOG-001" ? (
                     <input
                       placeholder="Kunda kg"
@@ -269,7 +262,7 @@ export function ShopSaleForm({
                         ? "Kunda count"
                         : (product?.unit ?? "Quantity")
                     }
-                    inputMode={line.sku==="EGG-001"?"numeric":"decimal"}
+                    inputMode="decimal"
                     value={line.quantity}
                     onChange={(event) =>
                       update(line.id, { quantity: event.target.value })
@@ -278,11 +271,12 @@ export function ShopSaleForm({
                   <span>
                     {product ? (
                       <>
-                        <b>{line.sku==="EGG-001"?`${formatPKR(BigInt(line.saleUnit==="tray"?product.trayRatePaisa??"0":product.pieceRatePaisa??"0"))}/${line.saleUnit}`:`${formatPKR(BigInt(product.ratePaisa))}/${product.unit}`}</b>
+                        <b>
+                          {formatPKR(BigInt(product.ratePaisa))}/{product.unit}
+                        </b>
                         <small>
-                          {line.sku==="EGG-001"?`${formatEggStock(BigInt(product.stockMilli),product.piecesPerTray??30).label} · ${formatEggStock(BigInt(product.stockMilli),product.piecesPerTray??30).totalPieces} total eggs`:`${formatMilli(BigInt(product.stockMilli))} available`}
+                          {formatMilli(BigInt(product.stockMilli))} available
                         </small>
-                        {line.sku==="EGG-001"&&line.quantity?(()=>{try{const normalized=normalizeEggQuantity(line.quantity,line.saleUnit,product.piecesPerTray??30),after=BigInt(product.stockMilli)-normalized.normalizedQuantityMilli;return <small>Deduct {normalized.normalizedPieces.toString()} eggs · after sale: {after>=0n?formatEggStock(after,product.piecesPerTray??30).label:"insufficient stock"}</small>}catch{return <small>Enter a whole number</small>}})():null}
                       </>
                     ) : null}
                   </span>
@@ -312,7 +306,6 @@ export function ShopSaleForm({
                     quantity: "",
                     yogurtFormat: "loose",
                     customKundaSize: "",
-                    saleUnit:"piece",
                   },
                 ])
               }

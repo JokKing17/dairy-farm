@@ -1,4 +1,4 @@
-import { MongoClient, type Document, type IndexDescription } from "mongodb";
+import { Long, MongoClient, type Document, type IndexDescription } from "mongodb";
 
 const client = new MongoClient(process.env.MONGODB_URI ?? "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true");
 const database = client.db(process.env.MONGODB_DB ?? "dairyflow");
