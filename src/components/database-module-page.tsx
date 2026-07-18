@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { businessDateFilter } from "@/lib/date-utils";
 import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
+import { FilterToolbar, SearchField } from "./ui";
 
 const display = (value: unknown, key: string) => {
   if (key.toLowerCase().includes("paisa")) return formatPKR(integerToBigInt(value));
@@ -11,10 +12,10 @@ const display = (value: unknown, key: string) => {
 };
 
 export async function DatabaseModulePage({
-  title, description, collection, columns, dateField = "businessDate", from, to,
+  title, description, collection, columns, dateField = "businessDate", from, to, q,
 }: {
   title: string; description: string; collection: string; columns: [string, string][];
-  dateField?: string; from?: string; to?: string;
+  dateField?: string; from?: string; to?: string; q?: string;
 }) {
   const filter: Record<string, unknown> = {};
   const dateFilter = businessDateFilter(from, to);
@@ -29,6 +30,10 @@ export async function DatabaseModulePage({
       filter[dateField] = bdFilter;
     }
   }
+  if (q) {
+    const regex = { $regex: q, $options: "i" };
+    filter.$or = columns.map(([, key]) => ({ [key]: regex }));
+  }
   const rows = await (await db()).collection(collection).find(filter).sort({ createdAt: -1 }).limit(100).toArray();
 
   return (
@@ -40,6 +45,15 @@ export async function DatabaseModulePage({
         </div>
         <div className="toolbar"><DateFilter /></div>
       </div>
+      <form>
+        <input type="hidden" name="from" value={from ?? ""} />
+        <input type="hidden" name="to" value={to ?? ""} />
+        <FilterToolbar>
+          <SearchField defaultValue={q} placeholder={`Search ${title.toLowerCase()}`} />
+          <button className="button secondary">Search</button>
+          {q ? <span className="result-count">{rows.length} results</span> : null}
+        </FilterToolbar>
+      </form>
       <div className="card table-card table-scroll">
         {rows.length ? (
           <table className="table">

@@ -152,7 +152,7 @@ export function ShopSaleForm({
         New Shop Sale
       </button>
       {open ? (
-        <div className="review-dialog">
+        <div className="review-dialog" role="dialog" aria-modal="true" aria-label="Review Shop Sale">
           <form action={action} className="card production-form">
             <input type="hidden" name="payload" value={payload} />
             <div className="customer-heading">
@@ -417,7 +417,7 @@ export function ShopSaleForm({
               </button>
             </div>
             {review ? (
-              <div className="review-dialog nested">
+              <div className="review-dialog nested" role="dialog" aria-modal="true" aria-label="Confirm sale reversal">
                 <div className="card review-card">
                   <div className="section-title">Confirm Shop Sale</div>
                   <div className="review-line">
@@ -468,7 +468,7 @@ export function ShopSaleReversal({ transactionNo }: { transactionNo: string }) {
   return (
     <>
       {open ? (
-        <div className="review-dialog">
+        <div className="review-dialog" role="dialog" aria-modal="true" aria-label="Shop Sale receipt">
           <form action={action} className="card review-card">
             <input type="hidden" name="transactionNo" value={transactionNo} />
             <div className="section-title">Reverse {transactionNo}</div>

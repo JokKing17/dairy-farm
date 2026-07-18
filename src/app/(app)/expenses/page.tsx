@@ -6,6 +6,7 @@ import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { ExpenseForm } from "./expense-form";
 import { ReverseExpenseForm } from "./reverse-expense-form";
+import { FilterToolbar, SearchField } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +16,19 @@ const categoryLabel = (c: string) =>
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; q?: string }>;
 }) {
   await requireSession();
-  const { from, to } = await searchParams;
+  const { from, to, q } = await searchParams;
   const today = karachiBusinessDate();
   const database = await db();
   const dateFilter = businessDateFilter(from, to);
   const match: Record<string, unknown> = {};
   if (dateFilter) Object.assign(match, dateFilter);
+  if (q) {
+    const regex = { $regex: q, $options: "i" };
+    match.$or = [{ transactionNo: regex }, { category: regex }, { description: regex }];
+  }
 
   const [rows, totals] = await Promise.all([
     database
@@ -56,7 +61,7 @@ export default async function ExpensesPage({
         </div>
       </div>
 
-      <section className="grid kpis">
+      <section className="grid kpis operational-analytics-removed">
         <article className="card">
           <div className="kpi-label">Total expenses</div>
           <div className="kpi-value">{formatPKR(totalAmount)}</div>
@@ -77,6 +82,15 @@ export default async function ExpensesPage({
           <ExpenseForm today={today} />
         </div>
       </details>
+      <form>
+        <input type="hidden" name="from" value={from ?? ""} />
+        <input type="hidden" name="to" value={to ?? ""} />
+        <FilterToolbar>
+          <SearchField defaultValue={q} placeholder="Search number, category or description" />
+          <button className="button secondary">Search</button>
+          {q ? <span className="result-count">{rows.length} results</span> : null}
+        </FilterToolbar>
+      </form>
 
       <div className="card table-card table-scroll">
         {rows.length ? (

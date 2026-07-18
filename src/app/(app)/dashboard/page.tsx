@@ -1,128 +1,95 @@
-import { AlertTriangle, ArrowRight, Droplets, TrendingUp, TrendingDown, DollarSign, Users, Bell } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Factory, Milk, ReceiptText, ShoppingBasket, Truck } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { DateFilter } from "@/components/date-filter";
-import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
+import { formatPKR, integerToBigInt } from "@/lib/money";
 import { dashboard } from "@/lib/queries";
+import { ChartCard, CompositionChart, GroupedBarChart, RankingChart, TrendChart, type ChartDatum } from "@/components/analytics-charts";
+import { EmptyState, MetricCard, PageHeader, SectionHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
-
-function bigint(value: unknown) { return integerToBigInt(value); }
-
-function greeting() {
+const big = (value: unknown) => integerToBigInt(value);
+const paisa = (value: unknown) => Number(big(value)) / 100;
+const milli = (value: unknown) => Number(big(value)) / 1000;
+const name = (value: unknown) => String(value ?? "Unknown").replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
+const greeting = () => {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", hour12: false }).format(new Date()));
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-}
-
-function dateLabel(from?: string, to?: string): string {
-  if (!from && !to) return "today";
-  if (from === to) return from!;
-  return `${from} – ${to}`;
-}
+};
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const session = await requireSession();
   const { from, to } = await searchParams;
   let data: Awaited<ReturnType<typeof dashboard>> | null = null;
-  let error = false;
-  try { data = await dashboard(from, to); } catch { error = true; }
-  const label = dateLabel(from, to);
-  const cards = data ? [
-    { label: "Milk purchased", value: `${formatMilli(bigint(data.purchases?.quantity))} L`, note: "Posted procurement", icon: Droplets, color: "var(--brand)" },
-    { label: "Purchase cost", value: formatPKR(bigint(data.purchases?.amount)), note: `Vendor intake ${label}`, icon: TrendingDown, color: "var(--warning)" },
-    { label: "Revenue", value: formatPKR(bigint(data.sales?.amount)), note: "Posted sales and deliveries", icon: TrendingUp, color: "var(--success)" },
-    { label: "Expenses", value: formatPKR(bigint(data.expenses?.amount)), note: `Posted ${label}`, icon: DollarSign, color: "var(--danger)" },
-    { label: "Receivables", value: formatPKR(bigint(data.receivables?.balance)), note: "Money to receive", icon: Users, color: "var(--info)" },
-    { label: "Vendor payables", value: formatPKR(bigint(data.payables?.balance)), note: "Money to pay", icon: Users, color: "var(--warning)" },
-    { label: "Milk movements", value: String(data.milkFlow.length), note: `Movement categories ${label}`, icon: Droplets, color: "var(--brand)" },
-    { label: "Open alerts", value: String(data.alerts.length), note: "Needs attention", icon: Bell, color: data.alerts.length > 0 ? "var(--danger)" : "var(--muted)" },
-    { label: "Households delivered", value: `${bigint(data.deliveryProgress?.delivered)} / ${bigint(data.expectedMilk?.customers)}`, note: `${bigint(data.deliveryProgress?.skipped)} skipped ${label}`, icon: Users, color: "var(--success)" },
-    { label: "Milk delivered", value: `${formatMilli(bigint(data.deliveryProgress?.milk))} L`, note: `Expected ${formatMilli(bigint(data.expectedMilk?.milk))} L`, icon: Droplets, color: "var(--brand)" },
-  ] : [];
+  try { data = await dashboard(from, to); } catch { /* shown as a safe degraded state */ }
+  if (!data) return <div className="content"><PageHeader title="Dashboard" description="Your dairy business overview." /><div className="degraded-banner" role="alert"><AlertTriangle /><div><b>Dashboard data is unavailable</b><span>Check the database connection and try again. No values were replaced with estimates.</span></div></div></div>;
 
-  return (
-    <div className="content">
-      <div className="dashboard-heading">
-        <div>
-          <div className="title">{greeting()}, {session.name}</div>
-          <div className="subtitle">
-            Business date {data?.businessDate ?? "unavailable"}
-            {data ? ` · refreshed ${data.refreshedAt.toLocaleTimeString("en-PK", { timeZone: "Asia/Karachi" })}` : ""}
-          </div>
-        </div>
-        <div className="toolbar">
-          <DateFilter />
-          <a className="button" href="/quick-entry">Record procurement <ArrowRight size={14} /></a>
-        </div>
+  const revenue = big(data.sales?.amount);
+  const purchaseCost = big(data.purchases?.amount);
+  const expenses = big(data.expenses?.amount);
+  const grossProfit = revenue - purchaseCost;
+  const operatingResult = grossProfit - expenses;
+  const daily = new Map<string, ChartDatum>();
+  for (const row of data.dailySales) daily.set(String(row._id), { name: String(row._id).slice(5), revenue: paisa(row.amount), expenses: 0 });
+  for (const row of data.dailyExpenses) {
+    const key = String(row._id); const item = daily.get(key) ?? { name: key.slice(5), revenue: 0, expenses: 0 };
+    item.expenses = paisa(row.amount); daily.set(key, item);
+  }
+  const dailyData = [...daily.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, item]) => item);
+  const procurement = data.dailyPurchases.map(row => ({ name: String(row._id).slice(5), quantity: milli(row.quantity), cost: paisa(row.amount) }));
+  const customerBalances = data.customerBalances.map(row => ({ name: String(row.name), value: paisa(row.balance) }));
+  const vendorBalances = data.vendorBalances.map(row => ({ name: String(row.name), value: paisa(row.balance) }));
+  const stock = data.stock.filter(row => milli(row.quantity) > 0).map(row => ({ name: String(row.name), value: milli(row.quantity) }));
+  const production = data.production.map(row => ({ name: String(row._id).slice(5), milk: milli(row.milk), yogurt: milli(row.output), loss: milli(row.loss) }));
+  const completion = Number(big(data.deliveryProgress?.delivered));
+  const expected = Number(big(data.expectedMilk?.customers));
+
+  return <div className="content">
+    <PageHeader title={`${greeting()}, ${session.name}`} description={`Business date ${data.businessDate} · figures use posted records only`} actions={<DateFilter />} />
+    <nav className="quick-actions" aria-label="Quick actions">
+      <Link className="button secondary" href="/quick-entry"><Truck size={17}/> Record Milk Procurement</Link>
+      <Link className="button secondary" href="/deliveries"><Milk size={17}/> Post Daily Deliveries</Link>
+      <Link className="button secondary" href="/sales"><ShoppingBasket size={17}/> New Shop Sale</Link>
+      <Link className="button secondary" href="/expenses"><ReceiptText size={17}/> Add Expense</Link>
+      <Link className="button secondary" href="/production"><Factory size={17}/> Create Yogurt Batch</Link>
+    </nav>
+
+    <section aria-labelledby="executive-summary">
+      <SectionHeader title="Executive summary" description="Financial position for the selected period; balances are current." />
+      <div className="executive-grid">
+        <MetricCard label="Revenue" value={formatPKR(revenue)} note="Shop sales and household deliveries" tone="success" />
+        <MetricCard label="Gross profit (estimated)" value={formatPKR(grossProfit)} note="Revenue − Milk procurement cost" tone={grossProfit >= 0n ? "success" : "danger"} />
+        <MetricCard label="Operating expenses" value={formatPKR(expenses)} note="Posted expense transactions" tone="danger" />
+        <MetricCard label="Operating result (estimated)" value={formatPKR(operatingResult)} note="Gross profit − operating expenses" tone={operatingResult >= 0n ? "brand" : "danger"} />
+        <MetricCard label="Customer receivables" value={formatPKR(big(data.receivables?.balance))} note="Current amount to collect" tone="info" />
+        <MetricCard label="Vendor payables" value={formatPKR(big(data.payables?.balance))} note="Current amount to pay" tone="warning" />
       </div>
+    </section>
 
-      {error ? (
-        <div className="degraded-banner" role="alert">
-          <AlertTriangle size={18} />
-          <div>
-            <b>Dashboard data is unavailable</b>
-            <span>MongoDB could not complete one or more analytics queries. No values have been replaced with zero.</span>
-          </div>
-        </div>
-      ) : (
-        <>
-          <section className="grid kpis">
-            {cards.map(({ label, value, note, icon: Icon, color }) => (
-              <article className="card" key={label}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div className="kpi-label">{label}</div>
-                  <Icon size={18} color={color} style={{ opacity: 0.7 }} />
-                </div>
-                <div className="kpi-value">{value}</div>
-                <div className="kpi-note">{note}</div>
-              </article>
-            ))}
-          </section>
+    <div className="dashboard-sections">
+      <section><SectionHeader title="Sales & customers" description="Revenue, delivery completion and collection priorities."/><div className="chart-grid">
+        <ChartCard title="Revenue and expenses trend" description="Daily posted value in PKR." summary={`${dailyData.length} business days contain posted activity.`}>{dailyData.length ? <TrendChart data={dailyData} keys={[{key:"revenue",label:"Revenue"},{key:"expenses",label:"Expenses",color:"#dc2626"}]} moneyValues/> : <EmptyState title="No trend yet" description="Posted sales and expenses will appear here."/>}</ChartCard>
+        <ChartCard title="Revenue by channel" description="Shop sales versus household deliveries." summary={`${data.revenueComposition.length} revenue channels have posted activity.`}>{data.revenueComposition.length ? <CompositionChart data={data.revenueComposition.map(row => ({name:name(row._id),value:paisa(row.amount)}))} moneyValues/> : <EmptyState title="No revenue yet" description="Post a sale or delivery to see this chart."/>}</ChartCard>
+        <ChartCard title="Households delivered" description="Delivered versus skipped or still expected." summary={`${completion} of ${expected} active households were delivered.`}><CompositionChart data={[{name:"Delivered",value:completion},{name:"Skipped / remaining",value:Math.max(expected-completion,0)}]}/></ChartCard>
+        <ChartCard title="Highest customer balances" description="Customers requiring collection attention." summary={`${customerBalances.length} customer balances are shown.`}>{customerBalances.length ? <RankingChart data={customerBalances} moneyValues/> : <EmptyState title="No outstanding balances" description="Customer receivables are clear."/>}</ChartCard>
+      </div></section>
 
-          <section className="grid split">
-            <article className="card">
-              <div className="section-title">Milk movements {label}</div>
-              {data?.milkFlow.length ? (
-                <table className="table">
-                  <thead>
-                    <tr><th>Movement</th><th>Quantity</th></tr>
-                  </thead>
-                  <tbody>
-                    {data.milkFlow.map((row) => (
-                      <tr key={String(row._id)}>
-                        <td>{String(row._id).replaceAll("-", " ")}</td>
-                        <td><b>{formatMilli(bigint(row.quantity))} L</b></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="empty-state">
-                  <b>No milk movements {label}</b>
-                  <span>Posted procurement, sales, deliveries and production will appear here.</span>
-                </div>
-              )}
-            </article>
+      <section><SectionHeader title="Vendors & procurement" description="Daily intake, cost and vendor payment priorities."/><div className="chart-grid">
+        <ChartCard title="Milk purchased by day" description="Posted Milk procurement in liters." summary={`${procurement.reduce((sum,row)=>sum+Number(row.quantity),0).toFixed(1)} liters purchased in this period.`}>{procurement.length ? <TrendChart data={procurement} keys={[{key:"quantity",label:"Liters"}]}/> : <EmptyState title="No procurement" description="Posted Milk purchases will appear here."/>}</ChartCard>
+        <ChartCard title="Highest vendor payables" description="Current balances requiring payment." summary={`${vendorBalances.length} vendor balances are shown.`}>{vendorBalances.length ? <RankingChart data={vendorBalances} moneyValues/> : <EmptyState title="No vendor payables" description="Vendor balances are clear."/>}</ChartCard>
+      </div></section>
 
-            <article className="card">
-              <div className="section-title">Attention needed</div>
-              {data?.alerts.length ? data.alerts.map((alert) => (
-                <div className="alert" key={alert._id.toString()}>
-                  <span className="dot" />
-                  <div>
-                    <b>{String(alert.title ?? "Operational alert")}</b>
-                    <div className="subtitle">{String(alert.message ?? "Review this item")}</div>
-                  </div>
-                </div>
-              )) : (
-                <div className="empty-state">
-                  <b>No open alerts</b>
-                  <span>Operational exceptions will appear here.</span>
-                </div>
-              )}
-            </article>
-          </section>
-        </>
-      )}
+      <section><SectionHeader title="Inventory" description="Current product quantities and Milk movement composition."/><div className="chart-grid">
+        <ChartCard title="Current stock by product" description="Quantities shown in each product's base unit." summary={`${stock.length} products currently have positive stock.`}>{stock.length ? <RankingChart data={stock}/> : <EmptyState title="No stock available" description="Receive inventory to populate current stock."/>}</ChartCard>
+        <ChartCard title="Milk movement composition" description="Posted Milk movement quantities for this period." summary={`${data.milkFlow.length} movement types were posted.`}>{data.milkFlow.length ? <CompositionChart data={data.milkFlow.map(row=>({name:name(row._id),value:Math.abs(milli(row.quantity))}))}/> : <EmptyState title="No Milk movements" description="Procurement, sales, deliveries and production appear here."/>}</ChartCard>
+      </div></section>
+
+      <section><SectionHeader title="Yogurt & Kunda" description="Production input, output and processing loss."/><div className="chart-grid">
+        <ChartCard title="Milk input, Yogurt output and loss" description="Daily production quantities in kilograms." summary={`${production.length} production days are shown.`}>{production.length ? <GroupedBarChart data={production} keys={[{key:"milk",label:"Milk input"},{key:"yogurt",label:"Yogurt output",color:"#2563eb"},{key:"loss",label:"Loss",color:"#dc2626"}]}/> : <EmptyState title="No Yogurt production" description="Posted batches will appear here."/>}</ChartCard>
+        <ChartCard title="Expenses by category" description="Where operating cash was spent." summary={`${data.expenseCategories.length} expense categories have activity.`}>{data.expenseCategories.length ? <CompositionChart data={data.expenseCategories.map(row=>({name:name(row._id),value:paisa(row.amount)}))} moneyValues/> : <EmptyState title="No expenses" description="Posted expenses will appear here."/>}</ChartCard>
+      </div></section>
+
+      <section><SectionHeader title="Alerts & attention" description="Operational exceptions that may need action."/><div className="card">{data.alerts.length ? data.alerts.map(alert => <div className="alert" key={alert._id.toString()}><span className={`dot severity-${String(alert.severity ?? "info")}`}/><div><b>{String(alert.title ?? "Operational alert")}</b><div className="subtitle">{String(alert.message ?? "Review this item")}</div></div></div>) : <EmptyState title="No open alerts" description="There are no operational exceptions requiring attention."/>}</div></section>
     </div>
-  );
+  </div>;
 }

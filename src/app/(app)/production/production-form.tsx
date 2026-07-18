@@ -235,7 +235,7 @@ export function ProductionForm(props: Props) {
         Create Yogurt Batch
       </button>
       {open ? (
-        <div className="review-dialog">
+        <div className="review-dialog" role="dialog" aria-modal="true" aria-label="Review Yogurt batch">
           <form action={action} className="card production-form">
             <input type="hidden" name="payload" value={payload} />
             <div className="customer-heading">
@@ -572,7 +572,7 @@ export function ProductionForm(props: Props) {
               Review Yogurt Batch
             </button>
             {review && preview ? (
-              <div className="review-dialog nested">
+              <div className="review-dialog nested" role="dialog" aria-modal="true" aria-label="Confirm Yogurt batch reversal">
                 <div className="card review-card">
                   <div className="section-title">Confirm Yogurt production</div>
                   {state.error ? (
@@ -648,7 +648,7 @@ export function ProductionReversal({
         Reverse
       </button>
       {open ? (
-        <div className="review-dialog">
+        <div className="review-dialog" role="dialog" aria-modal="true" aria-label="Yogurt batch details">
           <form action={action} className="card review-card">
             <input type="hidden" name="transactionNo" value={transactionNo} />
             <div className="section-title">Reverse {transactionNo}?</div>

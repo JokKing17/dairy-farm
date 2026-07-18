@@ -3,13 +3,15 @@ import { addDays } from "@/lib/date-utils";
 import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
 import { VendorForm } from "./vendor-form";
+import { FilterToolbar, SearchField } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
-  const { from, to } = await searchParams;
+export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string }> }) {
+  const { from, to, q } = await searchParams;
   const database = await db();
   const pipeline: Record<string, unknown>[] = [
+    ...(q ? [{ $match: { $or: ["name", "code", "phone"].map((field) => ({ [field]: { $regex: q, $options: "i" } })) } }] : []),
     { $sort: { name: 1 } },
     { $limit: 100 },
     { $lookup: { from: "party_ledger_entries", localField: "_id", foreignField: "partyId", as: "ledger" } },
@@ -37,6 +39,15 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
         </div>
       </div>
       <VendorForm />
+      <form>
+        <input type="hidden" name="from" value={from ?? ""} />
+        <input type="hidden" name="to" value={to ?? ""} />
+        <FilterToolbar>
+          <SearchField defaultValue={q} placeholder="Search name, code or phone" />
+          <button className="button secondary">Search</button>
+          {q ? <span className="result-count">{vendors.length} results</span> : null}
+        </FilterToolbar>
+      </form>
       <div className="card table-card">
         {vendors.length === 0 ? <div className="empty-state"><b>No vendors yet</b><span>Add the first supplier above to begin procurement.</span></div> : (
           <table className="table">

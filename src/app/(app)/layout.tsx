@@ -1,31 +1,7 @@
-import { CalendarDays, Search } from "lucide-react";
-import Link from "next/link";
-import { ConnectionStatus } from "@/components/connection-status";
-import { Sidebar } from "@/components/sidebar";
+import { AppShell } from "@/components/app-shell";
 import { requireSession } from "@/lib/auth";
-import { logout } from "../login/actions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
-  return (
-    <div className="shell">
-      <Sidebar />
-      <main className="main">
-        <header className="topbar">
-          <div className="toolbar">
-            <Link className="button secondary" href="/search"><Search size={14} /> Search</Link>
-            <ConnectionStatus />
-          </div>
-          <div className="toolbar">
-            <Link className="button secondary" href="/dashboard"><CalendarDays size={14} /><span>Today</span></Link>
-            <span className="badge neutral">{session.name} · {session.role}</span>
-            <form action={logout}>
-              <button className="button ghost" type="submit">Log out</button>
-            </form>
-          </div>
-        </header>
-        {children}
-      </main>
-    </div>
-  );
+  return <AppShell user={{ name: session.name, role: session.role }}>{children}</AppShell>;
 }

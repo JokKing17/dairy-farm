@@ -7,6 +7,7 @@ import { DateFilter } from "@/components/date-filter";
 import { formatMilli, formatPKR, integerToBigInt, multiplyQuantityRate } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { AddInventoryForm, ReceiptReversal } from "./inventory-form";
+import { FilterToolbar, SearchField } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ const visibleSkus = ["MILK-001", ...MANUAL_RECEIPT_SKUS];
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; product?: string; supplier?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; product?: string; supplier?: string; q?: string }>;
 }) {
   await requireSession();
   const filters = await searchParams;
@@ -25,6 +26,10 @@ export default async function InventoryPage({
   if (dateFilter) Object.assign(receiptMatch, dateFilter);
   if (filters.supplier) receiptMatch.supplierName = { $regex: filters.supplier, $options: "i" };
   if (filters.product) receiptMatch["lines.productSku"] = filters.product;
+  if (filters.q) {
+    const regex = { $regex: filters.q, $options: "i" };
+    receiptMatch.$or = [{ transactionNo: regex }, { supplierName: regex }, { "lines.productName": regex }];
+  }
 
   const [products, receipts] = await Promise.all([
     database.collection("products").find({ sku: { $in: visibleSkus }, internalOnly: { $ne: true } }).sort({ name: 1 }).toArray(),
@@ -78,7 +83,7 @@ export default async function InventoryPage({
         />
       </div>
 
-      <div className="summary-grid">
+      <div className="summary-grid inventory-analytics-removed" aria-hidden="true">
         {cards.map(([label, value]) => (
           <div className="card" key={label}>
             <small>{label}</small>
@@ -93,6 +98,15 @@ export default async function InventoryPage({
           <DateFilter/>
         </div>
       </div>
+      <form>
+        <input type="hidden" name="from" value={filters.from ?? ""} />
+        <input type="hidden" name="to" value={filters.to ?? ""} />
+        <FilterToolbar>
+          <SearchField defaultValue={filters.q} placeholder="Search receipt, supplier or product" />
+          <button className="button secondary">Search</button>
+          {filters.q ? <span className="result-count">{receipts.length} results</span> : null}
+        </FilterToolbar>
+      </form>
       <div className="card table-card table-scroll">
         {receipts.length ? (
           <table className="table">
@@ -129,7 +143,7 @@ export default async function InventoryPage({
         )}
       </div>
 
-      <div className="card table-card">
+      <div className="card table-card inventory-analytics-removed" aria-hidden="true">
         <div className="section-title">Manual receipt products</div>
         <div className="summary-grid">
           {manualProducts.map((product) => (

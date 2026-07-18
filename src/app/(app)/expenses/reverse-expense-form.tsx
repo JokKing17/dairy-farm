@@ -22,7 +22,7 @@ export function ReverseExpenseForm({ transactionNo }: { transactionNo: string })
       <input type="hidden" name="transactionNo" value={transactionNo} />
       <input name="reason" type="text" placeholder="Reason…" required minLength={5} className="small-button" style={{ width: 140 }} />
       <button className="button small-button" disabled={pending}>{pending ? "…" : "Confirm"}</button>
-      <button type="button" className="button secondary small-button" onClick={() => { setOpen(false); state.error = undefined; }}>Cancel</button>
+      <button type="button" className="button secondary small-button" onClick={() => setOpen(false)}>Cancel</button>
     </form>
   );
 }

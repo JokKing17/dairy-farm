@@ -56,6 +56,7 @@ export function DeliverySheet({ customers, products, today }: { customers: Custo
   const [businessDate, setBusinessDate] = useState(today);
   const [key] = useState(() => crypto.randomUUID());
   const [reviewing, setReviewing] = useState(false);
+  const [search, setSearch] = useState("");
   const [lines, setLines] = useState<Line[]>(() =>
     customers.map((customer) => ({
       ...customer,
@@ -173,6 +174,11 @@ export function DeliverySheet({ customers, products, today }: { customers: Custo
           );
         })}
       </div>
+      <label className="search-field delivery-search">
+        <span className="sr-only">Filter household customers</span>
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter customer name or address" />
+      </label>
+      {search ? <div className="result-count">{lines.filter(line => `${line.name} ${line.address}`.toLowerCase().includes(search.toLowerCase())).length} visible · all households remain in the posting batch</div> : null}
       <div className="table-scroll">
         <table className="table">
           <thead>
@@ -185,7 +191,7 @@ export function DeliverySheet({ customers, products, today }: { customers: Custo
             </tr>
           </thead>
           <tbody>
-            {lines.map((line, index) => (
+            {lines.map((line, index) => `${line.name} ${line.address}`.toLowerCase().includes(search.toLowerCase()) ? (
               <tr key={line.id}>
                 <td>
                   <b>{line.name}</b>
@@ -250,7 +256,7 @@ export function DeliverySheet({ customers, products, today }: { customers: Custo
                   <input value={line.notes} onChange={(event) => update(index, { notes: event.target.value })} />
                 </td>
               </tr>
-            ))}
+            ) : null)}
           </tbody>
         </table>
       </div>

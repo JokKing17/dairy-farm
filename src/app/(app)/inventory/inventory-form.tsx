@@ -154,7 +154,7 @@ export function AddInventoryForm({ products, today }: { products: Product[]; tod
         Add Inventory
       </button>
       {open ? (
-        <div className="review-dialog">
+        <div className="review-dialog" role="dialog" aria-modal="true" aria-label="Review inventory receipt">
           <form action={action} className="card inventory-form">
             <input type="hidden" name="payload" value={payload} />
             <div className="customer-heading">
@@ -308,7 +308,7 @@ export function AddInventoryForm({ products, today }: { products: Product[]; tod
               </button>
             </div>
             {review ? (
-              <div className="review-dialog nested">
+              <div className="review-dialog nested" role="dialog" aria-modal="true" aria-label="Confirm inventory reversal">
                 <div className="card review-card">
                   <div className="section-title">Confirm Inventory Receipt</div>
                   <div className="review-line">
@@ -395,7 +395,7 @@ export function ReceiptReversal({ transactionNo, status }: { transactionNo: stri
         Reverse
       </button>
       {open ? (
-        <div className="review-dialog">
+        <div className="review-dialog" role="dialog" aria-modal="true" aria-label="Inventory receipt details">
           <form action={action} className="card review-card">
             <input type="hidden" name="transactionNo" value={transactionNo} />
             <div className="section-title">Reverse {transactionNo}</div>

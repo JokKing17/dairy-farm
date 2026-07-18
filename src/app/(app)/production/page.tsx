@@ -15,11 +15,12 @@ import {
   ProductionPrintButton,
   ProductionReversal,
 } from "./production-form";
+import { FilterToolbar, SearchField } from "@/components/ui";
 export const dynamic = "force-dynamic";
 export default async function ProductionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; q?: string }>;
 }) {
   const session = await requireSession(),
     filters = await searchParams,
@@ -28,6 +29,7 @@ export default async function ProductionPage({
     match: Record<string, unknown> = { yogurtProductSku: "YOG-001" };
   const dateFilter = businessDateFilter(filters.from, filters.to);
   if (dateFilter) Object.assign(match, dateFilter);
+  if (filters.q) match.batchNo = { $regex: filters.q, $options: "i" };
   const [milk, yogurt, settings, batches, stats, packagingStats] =
     await Promise.all([
     database.collection("products").findOne({ sku: "MILK-001" }),
@@ -136,7 +138,6 @@ export default async function ProductionPage({
       (settings?.milkInventoryUnit ?? milk?.unit) === "kilogram"
         ? "kilogram"
         : "liter";
-  const dateLabel = filters.from && filters.from === filters.to ? filters.from : (filters.from || filters.to ? `${filters.from ?? "..."} – ${filters.to ?? "..."}` : "today");
   const cards = [
     ["Fresh Milk available", `${formatMilli(milkStock)} ${inventoryUnit}`],
     ["Yogurt available", `${formatMilli(yogurtStock)} kg`],
@@ -199,7 +200,7 @@ export default async function ProductionPage({
           }
         />
       </div>
-      <section className="grid kpis production-kpis">
+      <section className="grid kpis production-kpis production-analytics-removed" aria-hidden="true">
         {cards.map(([label, value]) => (
           <article className="card" key={label}>
             <div className="kpi-label">{label}</div>
@@ -248,6 +249,15 @@ export default async function ProductionPage({
             <DateFilter/>
           </div>
         </div>
+        <form>
+          <input type="hidden" name="from" value={filters.from ?? ""} />
+          <input type="hidden" name="to" value={filters.to ?? ""} />
+          <FilterToolbar>
+            <SearchField defaultValue={filters.q} placeholder="Search batch number" />
+            <button className="button secondary">Search</button>
+            {filters.q ? <span className="result-count">{batches.length} results</span> : null}
+          </FilterToolbar>
+        </form>
         {batches.length ? (
           <div className="table-scroll">
             <table className="table">

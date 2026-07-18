@@ -5,15 +5,20 @@ import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { ShopSaleForm, ShopSaleReversal } from "./shop-sale-form";
+import { FilterToolbar, SearchField } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string }> }) {
   const session = await requireSession();
-  const { from, to } = await searchParams;
+  const { from, to, q } = await searchParams;
   const database = await db();
   const today = karachiBusinessDate();
-  const saleMatch = businessDateFilter(from, to) ?? {};
+  const saleMatch: Record<string, unknown> = businessDateFilter(from, to) ?? {};
+  if (q) {
+    const regex = { $regex: q, $options: "i" };
+    saleMatch.$or = [{ transactionNo: regex }, { customerNameSnapshot: regex }];
+  }
   const [products, customers, sales] = await Promise.all([
     database.collection("products").find({ active: true, sellable: true, inventoryManaged: true, internalOnly: { $ne: true }, sku: { $ne: "KUNDA-001" } }).sort({ name: 1 }).toArray(),
     database.collection("customers").find({ active: true, customerType: "shop" }).sort({ name: 1 }).toArray(),
@@ -53,6 +58,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
           <DateFilter/>
         </div>
       </div>
+      <form>
+        <input type="hidden" name="from" value={from ?? ""} />
+        <input type="hidden" name="to" value={to ?? ""} />
+        <FilterToolbar>
+          <SearchField defaultValue={q} placeholder="Search receipt or customer" />
+          <button className="button secondary">Search</button>
+          {q ? <span className="result-count">{sales.length} results</span> : null}
+        </FilterToolbar>
+      </form>
       <div className="card table-card table-scroll">
         {sales.length ? (
           <table className="table">
@@ -63,8 +77,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
                 <th>Customer</th>
                 <th>Payment</th>
                 <th>Total</th>
-                <th>COGS</th>
-                <th>Gross profit</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -77,8 +89,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
                   <td>{String(sale.customerNameSnapshot ?? "Walk-in customer")}</td>
                   <td>{sale.paymentType === "credit" ? "Credit / Udhaar" : `Paid Now · ${String(sale.paymentMethod)}`}</td>
                   <td>{formatPKR(integerToBigInt(sale.totalPaisa))}</td>
-                  <td>{formatPKR(integerToBigInt(sale.totalCostOfGoodsSoldPaisa))}</td>
-                  <td>{formatPKR(integerToBigInt(sale.grossProfitPaisa))}</td>
                   <td><span className="badge">{String(sale.status)}</span></td>
                   <td>{session.role === "owner" && sale.status === "posted" ? <ShopSaleReversal transactionNo={String(sale.transactionNo)} /> : null}</td>
                 </tr>

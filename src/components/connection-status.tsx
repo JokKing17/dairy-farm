@@ -1,1 +1,16 @@
-"use client";import{useEffect,useState}from"react";import{Wifi,WifiOff}from"lucide-react";export function ConnectionStatus(){const[s,setS]=useState<"checking"|"connected"|"degraded"|"offline">("checking");useEffect(()=>{const check=async()=>{if(!navigator.onLine){setS("offline");return}try{const r=await fetch("/api/health",{cache:"no-store"});setS(r.ok?"connected":"degraded")}catch{setS("offline")}};void check();window.addEventListener("online",check);window.addEventListener("offline",check);return()=>{window.removeEventListener("online",check);window.removeEventListener("offline",check)}},[]);return <span className="subtitle">{s==="connected"?<Wifi size={13}/>:<WifiOff size={13}/>} {s==="checking"?"Checking…":s==="connected"?"Connected":s==="degraded"?"Database degraded":"Offline"}</span>}
+"use client";
+import { useEffect, useState } from "react";
+import { Wifi, WifiOff } from "lucide-react";
+export function ConnectionStatus() {
+  const [status, setStatus] = useState<"checking" | "connected" | "degraded" | "offline">("checking");
+  useEffect(() => {
+    const check = async () => {
+      if (!navigator.onLine) return setStatus("offline");
+      try { const response = await fetch("/api/health", { cache: "no-store" }); setStatus(response.ok ? "connected" : "degraded"); } catch { setStatus("offline"); }
+    };
+    void check(); window.addEventListener("online", check); window.addEventListener("offline", check);
+    return () => { window.removeEventListener("online", check); window.removeEventListener("offline", check); };
+  }, []);
+  const label = status === "checking" ? "Checking connection…" : status === "connected" ? "Connected" : status === "degraded" ? "Database degraded" : "Offline";
+  return <span className={`connection-status connection-${status}`}>{status === "connected" ? <Wifi /> : <WifiOff />}<span>{label}</span></span>;
+}
