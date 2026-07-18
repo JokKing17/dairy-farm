@@ -3,33 +3,16 @@ import { z } from "zod";
 import { transaction } from "../db";
 import { transactionNo } from "../ids";
 import { rupeesToPaisa } from "../money";
-
-const CATEGORIES = [
-  "utilities",
-  "rent",
-  "salaries",
-  "transport",
-  "office-supplies",
-  "maintenance",
-  "marketing",
-  "insurance",
-  "taxes",
-  "miscellaneous",
-] as const;
-
-const PAYMENT_METHODS = ["cash", "bank", "easypaisa", "jazzcash"] as const;
+import { EXPENSE_CATEGORIES, EXPENSE_PAYMENT_METHODS } from "../expense-constants";
 
 export const expenseInputSchema = z.object({
   businessDate: z.iso.date(),
-  category: z.enum(CATEGORIES),
+  category: z.enum(EXPENSE_CATEGORIES),
   amount: z.string(),
-  paymentMethod: z.enum(PAYMENT_METHODS),
+  paymentMethod: z.enum(EXPENSE_PAYMENT_METHODS),
   description: z.string().trim().max(500).optional(),
   idempotencyKey: z.uuid(),
 });
-
-export const EXPENSE_CATEGORIES = CATEGORIES;
-export const EXPENSE_PAYMENT_METHODS = PAYMENT_METHODS;
 
 export type ExpenseInput = z.infer<typeof expenseInputSchema>;
 
@@ -146,5 +129,81 @@ export async function postExpense(rawInput: ExpenseInput, actorId: string) {
       { session },
     );
     return result;
+  });
+}
+
+export async function reverseExpense(transactionNumber: string, reason: string, actorId: string) {
+  if (reason.trim().length < 5) throw new Error("Enter a clear reversal reason.");
+  return transaction(async (database, session) => {
+    const expense = await database
+      .collection("expenses")
+      .findOne({ transactionNo: transactionNumber, status: "posted" }, { session });
+    if (!expense) throw new Error("This expense is missing or already reversed.");
+
+    const now = new Date();
+    const reversalNo = transactionNo("REV-EXP");
+    const amountPaisa = Long.fromBigInt(-(expense.amountPaisa instanceof Long ? expense.amountPaisa.toBigInt() : BigInt(String(expense.amountPaisa))));
+
+    await database.collection("cashbook_entries").insertOne(
+      {
+        transactionNo: reversalNo,
+        lineNo: 1,
+        businessDate: expense.businessDate,
+        account: expense.paymentMethod,
+        direction: "in",
+        amountPaisa,
+        description: `Reversal of ${transactionNumber}`,
+        sourceType: "expense_reversal",
+        status: "posted",
+        createdAt: now,
+        createdBy: actorId,
+      },
+      { session },
+    );
+
+    await database.collection("financial_transactions").insertOne(
+      {
+        transactionNo: reversalNo,
+        kind: "expense_reversal",
+        amountPaisa,
+        category: expense.category,
+        businessDate: expense.businessDate,
+        reversesTransactionNo: transactionNumber,
+        status: "posted",
+        createdAt: now,
+        createdBy: actorId,
+      },
+      { session },
+    );
+
+    await database
+      .collection("expenses")
+      .updateOne(
+        { _id: expense._id, status: "posted" },
+        {
+          $set: {
+            status: "reversed",
+            reversedBy: actorId,
+            reversedAt: now,
+            reversalReason: reason.trim(),
+            reversalTransactionNo: reversalNo,
+          },
+        },
+        { session },
+      );
+
+    await database.collection("audit_logs").insertOne(
+      {
+        actorId,
+        action: "reverse",
+        entity: "expense",
+        entityId: transactionNumber,
+        metadata: { transactionNumber, reversalNo, reason: reason.trim() },
+        createdAt: now,
+      },
+      { session },
+    );
+
+    return { reversalNo };
   });
 }

@@ -1,9 +1,7 @@
 import "./globals.css";
 import "./auth.css";
-import "./vendor.css";
 import "./procurement.css";
 import "./dashboard.css";
-import "./layout-fix.css";
 import "./deliveries.css";
 import "./statements.css";
 import "./inventory.css";

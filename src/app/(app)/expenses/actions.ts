@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
-import { postExpense, expenseInputSchema } from "@/lib/services/expense";
+import { postExpense, reverseExpense, expenseInputSchema } from "@/lib/services/expense";
 
 export type ExpenseState = { error?: string; result?: { transactionNo: string; amountPaisa: string } };
+export type ReverseExpenseState = { error?: string };
 
 export async function createExpense(_: ExpenseState, formData: FormData): Promise<ExpenseState> {
   const actor = await requireSession(["owner", "manager", "accountant"]);
@@ -20,5 +21,21 @@ export async function createExpense(_: ExpenseState, formData: FormData): Promis
     return { result };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The expense could not be posted." };
+  }
+}
+
+export async function reverseExpenseAction(_: ReverseExpenseState, formData: FormData): Promise<ReverseExpenseState> {
+  const actor = await requireSession(["owner", "manager"]);
+  const transactionNo = String(formData.get("transactionNo") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  if (!transactionNo) return { error: "Missing transaction number." };
+  try {
+    await reverseExpense(transactionNo, reason, actor.userId);
+    revalidatePath("/expenses");
+    revalidatePath("/dashboard");
+    revalidatePath("/cashbook");
+    return {};
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The expense could not be reversed." };
   }
 }

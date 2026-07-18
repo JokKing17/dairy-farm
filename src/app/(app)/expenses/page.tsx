@@ -5,6 +5,7 @@ import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { ExpenseForm } from "./expense-form";
+import { ReverseExpenseForm } from "./reverse-expense-form";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,7 @@ export default async function ExpensesPage({
                 <th>Amount</th>
                 <th>Description</th>
                 <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -103,6 +105,7 @@ export default async function ExpensesPage({
                   <td>{formatPKR(integerToBigInt(row.amountPaisa))}</td>
                   <td>{row.description ? String(row.description) : "—"}</td>
                   <td><span className="badge">{String(row.status)}</span></td>
+                  <td>{String(row.status) === "posted" ? <ReverseExpenseForm transactionNo={String(row.transactionNo)} /> : "—"}</td>
                 </tr>
               ))}
             </tbody>

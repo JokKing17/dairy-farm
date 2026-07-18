@@ -154,3 +154,120 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
     return result;
   }).catch((error) => { if (duplicateError(error)) throw new Error("These deliveries were already posted. Refresh to see the existing receipt."); throw error; });
 }
+
+export async function reverseDailyDeliveries(transactionNumber: string, reason: string, actorId: string) {
+  if (reason.trim().length < 5) throw new Error("Enter a clear reversal reason.");
+  return transaction(async (database, session) => {
+    const batch = await database
+      .collection("delivery_batches")
+      .findOne({ transactionNo: transactionNumber, status: "posted" }, { session });
+    if (!batch) throw new Error("This delivery batch is missing or already reversed.");
+
+    const now = new Date();
+    const reversalNo = transactionNo("REV-DEL");
+    const inventoryMovements = await database
+      .collection("inventory_movements")
+      .find({ transactionNo: transactionNumber, type: "customer-delivery", status: "posted" }, { session })
+      .toArray();
+
+    const stockToRestore = new Map<string, bigint>();
+    for (const movement of inventoryMovements) {
+      const sku = String(movement.productSku);
+      const qty = integerToBigInt(movement.quantityMilli);
+      stockToRestore.set(sku, (stockToRestore.get(sku) ?? 0n) - qty);
+    }
+
+    for (const [sku, restoreQty] of stockToRestore) {
+      const result = await database.collection("products").updateOne(
+        { sku, active: true },
+        { $inc: { stockMilli: Long.fromBigInt(restoreQty) }, $set: { updatedAt: now, updatedBy: actorId } },
+        { session },
+      );
+      if (!result.modifiedCount) throw new Error(`Product ${sku} is missing or inactive. Cannot reverse delivery.`);
+    }
+
+    const reverseMovements = inventoryMovements.map((movement, index) => ({
+      transactionNo: reversalNo,
+      lineNo: index + 1,
+      productSku: movement.productSku,
+      productId: movement.productId,
+      location: movement.location,
+      type: "customer-delivery-reversal",
+      quantityMilli: Long.fromBigInt(-integerToBigInt(movement.quantityMilli)),
+      unitCostPaisa: movement.unitCostPaisa,
+      unitSaleRatePaisa: movement.unitSaleRatePaisa,
+      revenuePaisa: Long.fromBigInt(-integerToBigInt(movement.revenuePaisa)),
+      costOfGoodsSoldPaisa: Long.fromBigInt(-integerToBigInt(movement.costOfGoodsSoldPaisa)),
+      grossProfitPaisa: Long.fromBigInt(-integerToBigInt(movement.grossProfitPaisa)),
+      businessDate: batch.businessDate,
+      date: now,
+      status: "posted",
+      reversesTransactionNo: transactionNumber,
+      createdAt: now,
+      createdBy: actorId,
+    }));
+
+    if (reverseMovements.length) {
+      await database.collection("inventory_movements").insertMany(reverseMovements, { session });
+    }
+
+    const ledgerEntries = await database
+      .collection("party_ledger_entries")
+      .find({ transactionNo: transactionNumber, status: "posted" }, { session })
+      .toArray();
+
+    if (ledgerEntries.length) {
+      const reverseLedger = ledgerEntries.map((entry, index) => ({
+        transactionNo: reversalNo,
+        lineNo: index + 1,
+        partyType: entry.partyType,
+        partyId: entry.partyId,
+        businessDate: batch.businessDate,
+        date: now,
+        debitPaisa: entry.creditPaisa,
+        creditPaisa: entry.debitPaisa,
+        description: `Reversal of ${transactionNumber}`,
+        status: "posted",
+        createdAt: now,
+        createdBy: actorId,
+      }));
+      await database.collection("party_ledger_entries").insertMany(reverseLedger, { session });
+    }
+
+    await database.collection("financial_transactions").insertOne({
+      transactionNo: reversalNo,
+      kind: "customer_delivery_reversal",
+      amountPaisa: Long.fromBigInt(-integerToBigInt(batch.totalAmountPaisa)),
+      costOfGoodsSoldPaisa: Long.fromBigInt(-integerToBigInt(batch.costOfGoodsSoldPaisa)),
+      grossProfitPaisa: Long.fromBigInt(-integerToBigInt(batch.grossProfitPaisa)),
+      businessDate: batch.businessDate,
+      status: "posted",
+      reversesTransactionNo: transactionNumber,
+      createdAt: now,
+      createdBy: actorId,
+    }, { session });
+
+    await database.collection("customer_deliveries").updateMany(
+      { transactionNo: transactionNumber, status: "posted" },
+      { $set: { status: "reversed", reversedAt: now, reversedBy: actorId, reversalTransactionNo: reversalNo } },
+      { session },
+    );
+
+    await database.collection("delivery_batches").updateOne(
+      { _id: batch._id, status: "posted" },
+      { $set: { status: "reversed", reversedBy: actorId, reversedAt: now, reversalReason: reason.trim(), reversalTransactionNo: reversalNo, updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    await database.collection("audit_logs").insertOne({
+      actorId,
+      action: "reverse",
+      entity: "daily_delivery_batch",
+      entityId: transactionNumber,
+      metadata: { transactionNumber, reversalNo, reason: reason.trim() },
+      createdAt: now,
+    }, { session });
+
+    return { reversalNo };
+  });
+}

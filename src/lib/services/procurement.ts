@@ -78,21 +78,133 @@ export async function postProcurementBatch(rawInput: ProcurementInput, actorId: 
       stockLines.push({ transactionNo: number, lineNo, productSku: "MILK-001", location: "main-shop", type: "vendor-purchase", quantityMilli: Long.fromBigInt(quantityMilli), unitCostPaisa: Long.fromBigInt(ratePaisa), businessDate: input.businessDate, date: now, status: "posted", createdAt: now, createdBy: actorId });
     }
 
-    const header = await database.collection("procurement_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, shift: input.shift, totalQuantityMilli: Long.fromBigInt(totalQuantityMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
+    const milk = await database.collection("products").findOne({ sku: "MILK-001" }, { session });
+    if (!milk) throw new Error("Fresh Milk is not initialized. Run the seed command.");
+    const previousStockMilli = integerToBigInt(milk.stockMilli);
+    const previousAverageCostPaisa = integerToBigInt(milk.averageCostPaisa);
+
+    const header = await database.collection("procurement_batches").insertOne({ transactionNo: number, businessDate: input.businessDate, shift: input.shift, totalQuantityMilli: Long.fromBigInt(totalQuantityMilli), totalAmountPaisa: Long.fromBigInt(totalAmountPaisa), previousStockMilli: Long.fromBigInt(previousStockMilli), previousAverageCostPaisa: Long.fromBigInt(previousAverageCostPaisa), status: "posted", createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId }, { session });
     await database.collection("milk_purchases").insertMany(purchases, { session });
     await database.collection("party_ledger_entries").insertMany(ledgerLines, { session });
     await database.collection("inventory_movements").insertMany(stockLines, { session });
-    const milk = await database.collection("products").findOne({ sku: "MILK-001" }, { session });
-    if (!milk) throw new Error("Fresh Milk is not initialized. Run the seed command.");
-    const oldStock = integerToBigInt(milk.stockMilli);
-    const oldCost = integerToBigInt(milk.averageCostPaisa);
-    const newStock = oldStock + totalQuantityMilli;
-    const averageCost = newStock > 0n ? (oldStock * oldCost + totalAmountPaisa * 1000n) / newStock : 0n;
+    const newStock = previousStockMilli + totalQuantityMilli;
+    const averageCost = newStock > 0n ? (previousStockMilli * previousAverageCostPaisa + totalAmountPaisa * 1000n) / newStock : 0n;
     await database.collection("products").updateOne({ _id: milk._id }, { $set: { stockMilli: Long.fromBigInt(newStock), averageCostPaisa: Long.fromBigInt(averageCost), updatedAt: now, updatedBy: actorId } }, { session });
     await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "procurement", amountPaisa: Long.fromBigInt(totalAmountPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
-    await database.collection("audit_logs").insertOne({ actorId, action: "post", entity: "procurement_batch", entityId: header.insertedId, createdAt: now }, { session });
+    await database.collection("audit_logs").insertOne({ actorId, action: "post", entity: "procurement_batch", entityId: header.insertedId, metadata: { transactionNo: number, totalQuantityMilli: totalQuantityMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString(), previousStockMilli: previousStockMilli.toString(), previousAverageCostPaisa: previousAverageCostPaisa.toString() }, createdAt: now }, { session });
     const result = { transactionNo: number, totalQuantityMilli: totalQuantityMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };
     await database.collection("idempotency_records").insertOne({ key: input.idempotencyKey, operation: "procurement", result, createdAt: now }, { session });
     return result;
+  });
+}
+
+export async function reverseProcurementBatch(transactionNumber: string, reason: string, actorId: string) {
+  if (reason.trim().length < 5) throw new Error("Enter a clear reversal reason.");
+  return transaction(async (database, session) => {
+    const batch = await database
+      .collection("procurement_batches")
+      .findOne({ transactionNo: transactionNumber, status: "posted" }, { session });
+    if (!batch) throw new Error("This procurement batch is missing or already reversed.");
+
+    const previousStockMilli = integerToBigInt(batch.previousStockMilli);
+    const previousAverageCostPaisa = integerToBigInt(batch.previousAverageCostPaisa);
+    if (previousStockMilli === 0n && previousAverageCostPaisa === 0n && integerToBigInt(batch.totalQuantityMilli) > 0n) {
+      throw new Error("This batch cannot be reversed because it was created before reversal data was stored.");
+    }
+
+    const milk = await database.collection("products").findOne({ sku: "MILK-001" }, { session });
+    if (!milk) throw new Error("Fresh Milk product is missing.");
+    const currentStock = integerToBigInt(milk.stockMilli);
+    const removedQuantity = integerToBigInt(batch.totalQuantityMilli);
+
+    if (currentStock < removedQuantity) {
+      throw new Error(`Cannot reverse: only ${currentStock} milli-units of milk remain, but ${removedQuantity} need to be removed.`);
+    }
+
+    const now = new Date();
+    const reversalNo = transactionNo("REV-PROC");
+    const purchases = await database
+      .collection("milk_purchases")
+      .find({ transactionNo: transactionNumber, status: "posted" }, { session })
+      .toArray();
+
+    const reverseMovements = purchases
+      .filter((p) => p.status === "posted" && integerToBigInt(p.quantityMilli) > 0n)
+      .map((p, index) => ({
+        transactionNo: reversalNo,
+        lineNo: index + 1,
+        vendorId: p.vendorId,
+        productSku: "MILK-001",
+        location: "main-shop",
+        type: "procurement-reversal",
+        quantityMilli: Long.fromBigInt(-integerToBigInt(p.quantityMilli)),
+        unitCostPaisa: p.ratePaisa,
+        businessDate: batch.businessDate,
+        date: now,
+        status: "posted",
+        reversesTransactionNo: transactionNumber,
+        createdAt: now,
+        createdBy: actorId,
+      }));
+
+    const reverseLedger = purchases
+      .filter((p) => p.status === "posted" && integerToBigInt(p.amountPaisa) > 0n)
+      .map((p, index) => ({
+        transactionNo: reversalNo,
+        lineNo: index + 1,
+        partyType: "vendor",
+        partyId: p.vendorId,
+        date: now,
+        businessDate: batch.businessDate,
+        debitPaisa: p.amountPaisa,
+        creditPaisa: Long.ZERO,
+        description: `Reversal of ${transactionNumber}`,
+        status: "posted",
+        createdAt: now,
+        createdBy: actorId,
+      }));
+
+    if (reverseMovements.length) await database.collection("inventory_movements").insertMany(reverseMovements, { session });
+    if (reverseLedger.length) await database.collection("party_ledger_entries").insertMany(reverseLedger, { session });
+
+    await database.collection("products").updateOne(
+      { _id: milk._id, stockMilli: milk.stockMilli },
+      { $set: { stockMilli: Long.fromBigInt(previousStockMilli), averageCostPaisa: Long.fromBigInt(previousAverageCostPaisa), updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    await database.collection("financial_transactions").insertOne({
+      transactionNo: reversalNo,
+      kind: "procurement_reversal",
+      amountPaisa: Long.fromBigInt(-integerToBigInt(batch.totalAmountPaisa)),
+      businessDate: batch.businessDate,
+      reversesTransactionNo: transactionNumber,
+      status: "posted",
+      createdAt: now,
+      createdBy: actorId,
+    }, { session });
+
+    await database.collection("milk_purchases").updateMany(
+      { transactionNo: transactionNumber, status: "posted" },
+      { $set: { status: "reversed", reversedAt: now, reversedBy: actorId, reversalTransactionNo: reversalNo } },
+      { session },
+    );
+
+    await database.collection("procurement_batches").updateOne(
+      { _id: batch._id, status: "posted" },
+      { $set: { status: "reversed", reversedBy: actorId, reversedAt: now, reversalReason: reason.trim(), reversalTransactionNo: reversalNo, updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    await database.collection("audit_logs").insertOne({
+      actorId,
+      action: "reverse",
+      entity: "procurement_batch",
+      entityId: transactionNumber,
+      metadata: { transactionNumber, reversalNo, reason: reason.trim() },
+      createdAt: now,
+    }, { session });
+
+    return { reversalNo };
   });
 }

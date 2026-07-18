@@ -1,9 +1,7 @@
 import { db } from "./db";
-import { businessDateFilter } from "./date-utils";
+import { businessDateFilter, karachiBusinessDate } from "./date-utils";
 
-export function karachiBusinessDate(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
-}
+export { karachiBusinessDate };
 
 export async function dashboard(from?: string, to?: string) {
   const database = await db();

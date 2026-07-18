@@ -6,5 +6,3 @@
 .login-field { margin-bottom: 15px; }
 .login-submit { width: 100%; padding: 12px; justify-content: center; }
 .login-help { text-align: center; margin-top: 18px; }
-.form-error { background: #fef3f2; border: 1px solid #fecdca; color: var(--danger); padding: 10px 12px; border-radius: 9px; font-size: 12px; margin-bottom: 15px; }
-.button:disabled { opacity: .6; cursor: wait; }

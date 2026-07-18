@@ -2,14 +2,8 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { formatPKR, rupeesToPaisa } from "@/lib/money";
+import { EXPENSE_CATEGORIES, EXPENSE_PAYMENT_METHODS } from "@/lib/expense-constants";
 import { createExpense, type ExpenseState } from "./actions";
-
-const CATEGORIES = [
-  "utilities", "rent", "salaries", "transport", "office-supplies",
-  "maintenance", "marketing", "insurance", "taxes", "miscellaneous",
-] as const;
-
-const PAYMENT_METHODS = ["cash", "bank", "easypaisa", "jazzcash"] as const;
 
 const initialState: ExpenseState = {};
 
@@ -71,7 +65,7 @@ export function ExpenseForm({ today }: { today: string }) {
           <label>Category</label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">Select category</option>
-            {CATEGORIES.map((c) => (
+            {EXPENSE_CATEGORIES.map((c) => (
               <option key={c} value={c}>{c.replaceAll("-", " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
             ))}
           </select>
@@ -89,7 +83,7 @@ export function ExpenseForm({ today }: { today: string }) {
         <div className="field">
           <label>Payment method</label>
           <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-            {PAYMENT_METHODS.map((m) => (
+            {EXPENSE_PAYMENT_METHODS.map((m) => (
               <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
             ))}
           </select>
