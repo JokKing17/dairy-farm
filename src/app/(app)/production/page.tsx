@@ -1,5 +1,7 @@
 import { requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { businessDateFilter } from "@/lib/date-utils";
+import { DateFilter } from "@/components/date-filter";
 import {
   formatMilli,
   formatPKR,
@@ -17,14 +19,15 @@ export const dynamic = "force-dynamic";
 export default async function ProductionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ from?: string; to?: string }>;
 }) {
   const session = await requireSession(),
     filters = await searchParams,
     database = await db(),
     today = karachiBusinessDate(),
     match: Record<string, unknown> = { yogurtProductSku: "YOG-001" };
-  if (filters.date) match.businessDate = filters.date;
+  const dateFilter = businessDateFilter(filters.from, filters.to);
+  if (dateFilter) Object.assign(match, dateFilter);
   const [milk, yogurt, settings, batches, stats, packagingStats] =
     await Promise.all([
     database.collection("products").findOne({ sku: "MILK-001" }),
@@ -43,9 +46,8 @@ export default async function ProductionPage({
       .aggregate([
         {
           $match: {
-            businessDate: today,
+            ...match,
             status: "posted",
-            yogurtProductSku: "YOG-001",
           },
         },
         {
@@ -134,6 +136,7 @@ export default async function ProductionPage({
       (settings?.milkInventoryUnit ?? milk?.unit) === "kilogram"
         ? "kilogram"
         : "liter";
+  const dateLabel = filters.from && filters.from === filters.to ? filters.from : (filters.from || filters.to ? `${filters.from ?? "..."} – ${filters.to ?? "..."}` : "today");
   const cards = [
     ["Fresh Milk available", `${formatMilli(milkStock)} ${inventoryUnit}`],
     ["Yogurt available", `${formatMilli(yogurtStock)} kg`],
@@ -143,14 +146,14 @@ export default async function ProductionPage({
       "Yogurt stock value",
       formatPKR(multiplyQuantityRate(yogurtStock, yogurtCost)),
     ],
-    ["Milk converted today", `${formatMilli(milkTotal)} kg`],
-    ["Yogurt produced today", `${formatMilli(outputTotal)} kg`],
+    ["Milk converted", `${formatMilli(milkTotal)} kg`],
+    ["Yogurt produced", `${formatMilli(outputTotal)} kg`],
     [
-      "Processing loss today",
+      "Processing loss",
       `${formatMilli(integerToBigInt(stats?.loss))} kg`,
     ],
-    ["Kundas prepared today", String(stats?.kundas ?? 0)],
-    ["Actual yield today", `${formatMilli(yieldValue * 100n)}%`],
+    ["Kundas prepared", String(stats?.kundas ?? 0)],
+    ["Actual yield", `${formatMilli(yieldValue * 100n)}%`],
     ["Standard yield", `${formatMilli(standardYield * 100n)}%`],
     [
       "Automatic / Manual",
@@ -241,10 +244,9 @@ export default async function ProductionPage({
       <div className="card table-card">
         <div className="customer-heading">
           <div className="section-title">Yogurt production history</div>
-          <form className="toolbar">
-            <input type="date" name="date" defaultValue={filters.date} />
-            <button className="button secondary">Filter</button>
-          </form>
+          <div className="toolbar">
+            <DateFilter/>
+          </div>
         </div>
         {batches.length ? (
           <div className="table-scroll">

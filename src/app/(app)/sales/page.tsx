@@ -1,19 +1,23 @@
 import { requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { businessDateFilter } from "@/lib/date-utils";
+import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { ShopSaleForm, ShopSaleReversal } from "./shop-sale-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const session = await requireSession();
+  const { from, to } = await searchParams;
   const database = await db();
   const today = karachiBusinessDate();
+  const saleMatch = businessDateFilter(from, to) ?? {};
   const [products, customers, sales] = await Promise.all([
     database.collection("products").find({ active: true, sellable: true, inventoryManaged: true, internalOnly: { $ne: true }, sku: { $ne: "KUNDA-001" } }).sort({ name: 1 }).toArray(),
     database.collection("customers").find({ active: true, customerType: "shop" }).sort({ name: 1 }).toArray(),
-    database.collection("sales").find({ channel: "shop" }).sort({ createdAt: -1 }).limit(100).toArray(),
+    database.collection("sales").find({ channel: "shop", ...saleMatch }).sort({ createdAt: -1 }).limit(100).toArray(),
   ]);
 
   return (
@@ -42,6 +46,12 @@ export default async function Page() {
             code: String(customer.code),
           }))}
         />
+      </div>
+      <div className="customer-heading">
+        <div className="section-title">Shop sales history</div>
+        <div className="toolbar">
+          <DateFilter/>
+        </div>
       </div>
       <div className="card table-card table-scroll">
         {sales.length ? (

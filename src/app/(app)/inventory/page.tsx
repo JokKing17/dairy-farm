@@ -1,7 +1,9 @@
 import { requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { businessDateFilter } from "@/lib/date-utils";
 import { formatEggStock } from "@/lib/egg-units";
 import { MANUAL_RECEIPT_SKUS } from "@/lib/inventory-calculations";
+import { DateFilter } from "@/components/date-filter";
 import { formatMilli, formatPKR, integerToBigInt, multiplyQuantityRate } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { AddInventoryForm, ReceiptReversal } from "./inventory-form";
@@ -13,14 +15,14 @@ const visibleSkus = ["MILK-001", ...MANUAL_RECEIPT_SKUS];
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; product?: string; supplier?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; product?: string; supplier?: string }>;
 }) {
   await requireSession();
   const filters = await searchParams;
   const database = await db();
   const receiptMatch: Record<string, unknown> = {};
-
-  if (filters.date) receiptMatch.businessDate = filters.date;
+  const dateFilter = businessDateFilter(filters.from, filters.to);
+  if (dateFilter) Object.assign(receiptMatch, dateFilter);
   if (filters.supplier) receiptMatch.supplierName = { $regex: filters.supplier, $options: "i" };
   if (filters.product) receiptMatch["lines.productSku"] = filters.product;
 
@@ -85,6 +87,12 @@ export default async function InventoryPage({
         ))}
       </div>
 
+      <div className="customer-heading">
+        <div className="section-title">Receipts</div>
+        <div className="toolbar">
+          <DateFilter/>
+        </div>
+      </div>
       <div className="card table-card table-scroll">
         {receipts.length ? (
           <table className="table">
