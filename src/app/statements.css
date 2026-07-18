@@ -1,25 +1,9 @@
-.customer-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-5);
-  flex-wrap: wrap;
-}
-
 .statement .toolbar {
   flex-wrap: wrap;
 }
 
-@media (max-width: 760px) {
-  .customer-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}
-
 @media print {
   .sidebar,
-  .topbar,
   .print-button {
     display: none !important;
   }

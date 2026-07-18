@@ -12,6 +12,6 @@ export function LoginForm() {
     <div className="field login-field"><label htmlFor="email">Email address</label><input id="email" name="email" type="email" autoComplete="username" required/></div>
     <div className="field login-field"><label htmlFor="password">Password</label><input id="password" name="password" type="password" autoComplete="current-password" required/></div>
     <button className="button login-submit" disabled={pending}>{pending ? "Signing in…" : "Sign in securely"}</button>
-    <p className="subtitle login-help">Forgot password? Contact the business owner.</p>
+    <p className="subtitle login-help">Forgot your password? Contact the administrator.</p>
   </form>;
 }

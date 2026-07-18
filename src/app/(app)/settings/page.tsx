@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { formatMilli, integerToBigInt } from "@/lib/money";
 import { SettingsForm } from "./settings-form";
+import { PageHeader } from "@/components/ui";
 
 const money = (value: unknown) =>
   (Number(integerToBigInt(value)) / 100).toFixed(2);
@@ -38,12 +39,8 @@ export default async function Page() {
     eggDefaultSaleUnit:String(egg?.defaultSaleUnit??"piece"),
   };
   return (
-    <div className="content">
-      <div className="title">Business settings</div>
-      <div className="subtitle">
-        Rates and controls apply to new transactions; historical receipts never
-        change.
-      </div>
+    <div className="content settings-content">
+      <PageHeader title="Business Settings" description="Rates and controls apply to new transactions; historical receipts never change."/>
       <SettingsForm settings={settings} />
     </div>
   );

@@ -15,6 +15,21 @@
   font-size: var(--text-sm);
   background: var(--surface);
 }
+.delivery-sheet .search-field {
+  width: min(100%, 420px);
+  max-width: none;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-md);
+}
+.delivery-sheet .search-field input {
+  width: 100%;
+  max-width: none;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.delivery-sheet .search-field input:focus { box-shadow: none; }
 
 .extra-products {
   display: grid;

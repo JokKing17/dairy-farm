@@ -6,7 +6,9 @@ import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { ExpenseForm } from "./expense-form";
 import { ReverseExpenseForm } from "./reverse-expense-form";
-import { FilterToolbar, SearchField } from "@/components/ui";
+import { FilterToolbar, PageHeader, SearchField, SectionHeader } from "@/components/ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { ClearSearch } from "@/components/clear-search";
 
 export const dynamic = "force-dynamic";
 
@@ -19,62 +21,28 @@ export default async function ExpensesPage({
   searchParams: Promise<{ from?: string; to?: string; q?: string }>;
 }) {
   await requireSession();
-  const { from, to, q } = await searchParams;
+  const { from, to, q: rawQuery } = await searchParams;
+  const q = normalizeSearchQuery(rawQuery);
   const today = karachiBusinessDate();
   const database = await db();
   const dateFilter = businessDateFilter(from, to);
   const match: Record<string, unknown> = {};
   if (dateFilter) Object.assign(match, dateFilter);
-  if (q) {
-    const regex = { $regex: q, $options: "i" };
-    match.$or = [{ transactionNo: regex }, { category: regex }, { description: regex }];
+  const searchPattern = escapedSearchPattern(q);
+  if (searchPattern) {
+    match.$or = [{ transactionNo: searchPattern }, { category: searchPattern }, { description: searchPattern }];
   }
 
-  const [rows, totals] = await Promise.all([
-    database
+  const rows = await database
       .collection("expenses")
       .find(match)
       .sort({ businessDate: -1, createdAt: -1 })
       .limit(100)
-      .toArray(),
-    database
-      .collection("expenses")
-      .aggregate([
-        { $match: { ...match, status: "posted" } },
-        { $group: { _id: null, amount: { $sum: "$amountPaisa" }, count: { $sum: 1 } } },
-      ])
-      .next(),
-  ]);
-
-  const totalAmount = integerToBigInt(totals?.amount);
-  const count = Number(totals?.count ?? 0);
+      .toArray();
 
   return (
     <div className="content">
-      <div className="customer-heading">
-        <div>
-          <div className="title">Expenses</div>
-          <div className="subtitle">Posted operating expenses and payment source.</div>
-        </div>
-        <div className="toolbar">
-          <DateFilter />
-        </div>
-      </div>
-
-      <section className="grid kpis operational-analytics-removed">
-        <article className="card">
-          <div className="kpi-label">Total expenses</div>
-          <div className="kpi-value">{formatPKR(totalAmount)}</div>
-        </article>
-        <article className="card">
-          <div className="kpi-label">Expense count</div>
-          <div className="kpi-value">{count}</div>
-        </article>
-        <article className="card">
-          <div className="kpi-label">Period</div>
-          <div className="kpi-value kpi-period">{from && to ? `${from} – ${to}` : from ?? to ?? "All time"}</div>
-        </article>
-      </section>
+      <PageHeader title="Expenses" description="Posted operating expenses and payment source." actions={<DateFilter/>}/>
 
       <details className="card add-form">
         <summary className="button secondary open-form">Add expense</summary>
@@ -82,12 +50,14 @@ export default async function ExpensesPage({
           <ExpenseForm today={today} />
         </div>
       </details>
+      <SectionHeader title="Expense history" description="Search and review the latest 100 expense records."/>
       <form>
         <input type="hidden" name="from" value={from ?? ""} />
         <input type="hidden" name="to" value={to ?? ""} />
         <FilterToolbar>
           <SearchField defaultValue={q} placeholder="Search number, category or description" />
           <button className="button secondary">Search</button>
+          {q ? <ClearSearch/> : null}
           {q ? <span className="result-count">{rows.length} results</span> : null}
         </FilterToolbar>
       </form>

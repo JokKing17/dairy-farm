@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, ChartNoAxesCombined, Factory, LayoutDashboard, LogOut, Milk, ReceiptText, Settings, ShoppingBasket, Truck, Users, WalletCards, Warehouse, X, Zap } from "lucide-react";
-import { ConnectionStatus } from "./connection-status";
 import { logout } from "@/app/login/actions";
 
 const groups = [
@@ -13,7 +12,7 @@ const groups = [
   { name: "System", items: [["Notifications", "/notifications", Bell], ["Settings", "/settings", Settings]] },
 ] as const;
 
-export function Sidebar({ user, open, onNavigate }: { user: { name: string; role: string }; open: boolean; onNavigate: () => void }) {
+export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
   const pathname = usePathname();
   return <aside className={`sidebar ${open ? "is-open" : ""}`} aria-label="Application sidebar">
     <div className="brand"><span className="brandmark"><Milk size={20} /></span><span>DairyFlow</span><button className="sidebar-close icon-button" onClick={onNavigate} aria-label="Close navigation"><X /></button></div>
@@ -23,6 +22,6 @@ export function Sidebar({ user, open, onNavigate }: { user: { name: string; role
         return <Link key={name} href={href} className={active ? "active" : undefined} onClick={onNavigate} aria-current={active ? "page" : undefined}><Icon size={18} /><span>{name}</span></Link>;
       })}</div>)}
     </nav>
-    <footer className="sidebar-footer"><ConnectionStatus /><div className="user-summary"><span className="user-avatar">{user.name.slice(0, 1).toUpperCase()}</span><div><b>{user.name}</b><span>{user.role}</span></div></div><form action={logout}><button className="sidebar-logout" type="submit"><LogOut size={17} /> Log out</button></form></footer>
+    <footer className="sidebar-footer"><form action={logout}><button className="sidebar-logout" type="submit"><LogOut size={17} /> Log out</button></form></footer>
   </aside>;
 }

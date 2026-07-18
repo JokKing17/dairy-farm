@@ -6,7 +6,6 @@ import {
   formatMilli,
   formatPKR,
   integerToBigInt,
-  multiplyQuantityRate,
 } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { YOGURT_PRODUCTION_DEFAULTS } from "@/lib/yogurt-production-calculations";
@@ -15,7 +14,9 @@ import {
   ProductionPrintButton,
   ProductionReversal,
 } from "./production-form";
-import { FilterToolbar, SearchField } from "@/components/ui";
+import { FilterToolbar, PageHeader, SearchField, SectionHeader } from "@/components/ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { ClearSearch } from "@/components/clear-search";
 export const dynamic = "force-dynamic";
 export default async function ProductionPage({
   searchParams,
@@ -29,8 +30,10 @@ export default async function ProductionPage({
     match: Record<string, unknown> = { yogurtProductSku: "YOG-001" };
   const dateFilter = businessDateFilter(filters.from, filters.to);
   if (dateFilter) Object.assign(match, dateFilter);
-  if (filters.q) match.batchNo = { $regex: filters.q, $options: "i" };
-  const [milk, yogurt, settings, batches, stats, packagingStats] =
+  const q = normalizeSearchQuery(filters.q);
+  const searchPattern = escapedSearchPattern(q);
+  if (searchPattern) match.batchNo = searchPattern;
+  const [milk, yogurt, settings, batches, packagingStats] =
     await Promise.all([
     database.collection("products").findOne({ sku: "MILK-001" }),
     database.collection("products").findOne({ sku: "YOG-001" }),
@@ -43,41 +46,6 @@ export default async function ProductionPage({
       .sort({ businessDate: -1, createdAt: -1 })
       .limit(100)
       .toArray(),
-    database
-      .collection("production_batches")
-      .aggregate([
-        {
-          $match: {
-            ...match,
-            status: "posted",
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            milk: {
-              $sum: { $ifNull: ["$actualMilkUsedMilli", "$milkUsedMilli"] },
-            },
-            output: {
-              $sum: {
-                $ifNull: ["$actualYogurtOutputMilli", "$actualOutputMilli"],
-              },
-            },
-            loss: { $sum: "$processingLossMilli" },
-            profit: { $sum: "$estimatedGrossProfitPaisa" },
-            automatic: {
-              $sum: {
-                $cond: [{ $eq: ["$productionMode", "automatic"] }, 1, 0],
-              },
-            },
-            manual: {
-              $sum: { $cond: [{ $eq: ["$productionMode", "manual"] }, 1, 0] },
-            },
-            kundas: { $sum: { $sum: "$kundaEntries.numberOfKundas" } },
-          },
-        },
-      ])
-      .next(),
     database
       .collection("yogurt_packaging_movements")
       .aggregate([
@@ -112,12 +80,7 @@ export default async function ProductionPage({
       .toArray(),
   ]);
   const milkStock = integerToBigInt(milk?.stockMilli),
-    yogurtStock = integerToBigInt(yogurt?.stockMilli),
-    yogurtCost = integerToBigInt(yogurt?.averageCostPaisa),
     yogurtRate = integerToBigInt(yogurt?.retailRatePaisa),
-    milkTotal = integerToBigInt(stats?.milk),
-    outputTotal = integerToBigInt(stats?.output),
-    yieldValue = milkTotal > 0n ? (outputTotal * 1000n) / milkTotal : 0n,
     milkRatio = integerToBigInt(
       settings?.yogurtAutomaticMilkRatioParts,
       YOGURT_PRODUCTION_DEFAULTS.milkRatioParts,
@@ -138,30 +101,6 @@ export default async function ProductionPage({
       (settings?.milkInventoryUnit ?? milk?.unit) === "kilogram"
         ? "kilogram"
         : "liter";
-  const cards = [
-    ["Fresh Milk available", `${formatMilli(milkStock)} ${inventoryUnit}`],
-    ["Yogurt available", `${formatMilli(yogurtStock)} kg`],
-    ["Yogurt selling price", `${formatPKR(yogurtRate)} / kg`],
-    ["Yogurt average cost", `${formatPKR(yogurtCost)} / kg`],
-    [
-      "Yogurt stock value",
-      formatPKR(multiplyQuantityRate(yogurtStock, yogurtCost)),
-    ],
-    ["Milk converted", `${formatMilli(milkTotal)} kg`],
-    ["Yogurt produced", `${formatMilli(outputTotal)} kg`],
-    [
-      "Processing loss",
-      `${formatMilli(integerToBigInt(stats?.loss))} kg`,
-    ],
-    ["Kundas prepared", String(stats?.kundas ?? 0)],
-    ["Actual yield", `${formatMilli(yieldValue * 100n)}%`],
-    ["Standard yield", `${formatMilli(standardYield * 100n)}%`],
-    [
-      "Automatic / Manual",
-      `${Number(stats?.automatic ?? 0)} / ${Number(stats?.manual ?? 0)}`,
-    ],
-    ["Estimated gross margin", formatPKR(integerToBigInt(stats?.profit))],
-  ];
   const packagingRows = packagingStats.map((row) => ({
     size: integerToBigInt(row._id),
     produced: integerToBigInt(row.produced),
@@ -170,15 +109,7 @@ export default async function ProductionPage({
   }));
   return (
     <div className="content">
-      <div className="customer-heading">
-        <div>
-          <div className="title">Yogurt / Kunda Production</div>
-          <div className="subtitle">
-            Standard: {milkRatio.toString()} kg Milk → {yogurtRatio.toString()}{" "}
-            kg Yogurt, with actual Manual production when needed.
-          </div>
-        </div>
-        <ProductionForm
+      <PageHeader title="Yogurt / Kunda Production" description={`Standard: ${milkRatio.toString()} kg Milk → ${yogurtRatio.toString()} kg Yogurt, with actual Manual production when needed.`} actions={<ProductionForm
           today={today}
           milkStockMilli={milkStock.toString()}
           milkCostPaisa={integerToBigInt(milk?.averageCostPaisa).toString()}
@@ -198,16 +129,7 @@ export default async function ProductionPage({
               ? integerToBigInt(settings.milkDensityMilliKgPerLiter).toString()
               : undefined
           }
-        />
-      </div>
-      <section className="grid kpis production-kpis production-analytics-removed" aria-hidden="true">
-        {cards.map(([label, value]) => (
-          <article className="card" key={label}>
-            <div className="kpi-label">{label}</div>
-            <div className="kpi-value">{value}</div>
-          </article>
-        ))}
-      </section>
+        />}/>
       <div className="card table-card">
         <div className="section-title">Kundas produced versus sold</div>
         {packagingRows.length ? (
@@ -243,19 +165,15 @@ export default async function ProductionPage({
         )}
       </div>
       <div className="card table-card">
-        <div className="customer-heading">
-          <div className="section-title">Yogurt production history</div>
-          <div className="toolbar">
-            <DateFilter/>
-          </div>
-        </div>
+        <SectionHeader title="Yogurt production history" description="Search and review posted production batches." actions={<DateFilter/>}/>
         <form>
           <input type="hidden" name="from" value={filters.from ?? ""} />
           <input type="hidden" name="to" value={filters.to ?? ""} />
           <FilterToolbar>
-            <SearchField defaultValue={filters.q} placeholder="Search batch number" />
+            <SearchField defaultValue={q} placeholder="Search batch number" />
             <button className="button secondary">Search</button>
-            {filters.q ? <span className="result-count">{batches.length} results</span> : null}
+            {q ? <ClearSearch/> : null}
+            {q ? <span className="result-count">{batches.length} results</span> : null}
           </FilterToolbar>
         </form>
         {batches.length ? (

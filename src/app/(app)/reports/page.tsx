@@ -6,6 +6,7 @@ import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
 import { dashboard, karachiBusinessDate } from "@/lib/queries";
 import { ChartCard, CompositionChart, GroupedBarChart, TrendChart, YieldLineChart } from "@/components/analytics-charts";
 import { DataTableContainer, EmptyState, FilterToolbar, MetricCard, PageHeader, SearchField, SectionHeader } from "@/components/ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
 
 export const dynamic = "force-dynamic";
 const tabs = [
@@ -26,7 +27,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const to = addDays(inclusiveTo,1);
   const tab = tabs.some(([key])=>key===filters.tab) ? filters.tab! : "overview";
   const database = await db();
-  const pattern = filters.q ? new RegExp(filters.q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i") : undefined;
+  const q = normalizeSearchQuery(filters.q);
+  const pattern = escapedSearchPattern(q) ?? undefined;
   const [summary, production, transactions] = await Promise.all([
     dashboard(from,inclusiveTo),
     database.collection("production_batches").aggregate([

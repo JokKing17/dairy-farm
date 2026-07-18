@@ -1,13 +1,14 @@
 import { requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { businessDateFilter } from "@/lib/date-utils";
-import { formatEggStock } from "@/lib/egg-units";
 import { MANUAL_RECEIPT_SKUS } from "@/lib/inventory-calculations";
 import { DateFilter } from "@/components/date-filter";
-import { formatMilli, formatPKR, integerToBigInt, multiplyQuantityRate } from "@/lib/money";
+import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { AddInventoryForm, ReceiptReversal } from "./inventory-form";
-import { FilterToolbar, SearchField } from "@/components/ui";
+import { FilterToolbar, PageHeader, SearchField, SectionHeader } from "@/components/ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { ClearSearch } from "@/components/clear-search";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +21,16 @@ export default async function InventoryPage({
 }) {
   await requireSession();
   const filters = await searchParams;
+  const q = normalizeSearchQuery(filters.q);
   const database = await db();
   const receiptMatch: Record<string, unknown> = {};
   const dateFilter = businessDateFilter(filters.from, filters.to);
   if (dateFilter) Object.assign(receiptMatch, dateFilter);
   if (filters.supplier) receiptMatch.supplierName = { $regex: filters.supplier, $options: "i" };
   if (filters.product) receiptMatch["lines.productSku"] = filters.product;
-  if (filters.q) {
-    const regex = { $regex: filters.q, $options: "i" };
-    receiptMatch.$or = [{ transactionNo: regex }, { supplierName: regex }, { "lines.productName": regex }];
+  const searchPattern = escapedSearchPattern(q);
+  if (searchPattern) {
+    receiptMatch.$or = [{ transactionNo: searchPattern }, { supplierName: searchPattern }, { "lines.productName": searchPattern }];
   }
 
   const [products, receipts] = await Promise.all([
@@ -36,41 +38,9 @@ export default async function InventoryPage({
     database.collection("inventory_receipts").find(receiptMatch).sort({ businessDate: -1, createdAt: -1 }).limit(100).toArray(),
   ]);
 
-  const bySku = new Map(products.map((product) => [String(product.sku), product]));
-  const manualProducts = MANUAL_RECEIPT_SKUS.map((sku) => bySku.get(sku)).filter(Boolean);
-  const stock = (sku: string) => integerToBigInt(bySku.get(sku)?.stockMilli);
-  const egg = bySku.get("EGG-001");
-  const eggStock = egg ? formatEggStock(integerToBigInt(egg.stockMilli), Number(egg.piecesPerTray ?? 30)) : null;
-  const totalValue = products
-    .filter((product) => product.inventoryManaged === true)
-    .reduce((sum, product) => sum + multiplyQuantityRate(integerToBigInt(product.stockMilli), integerToBigInt(product.averageCostPaisa)), 0n);
-  const lowCount = products.filter((product) => product.inventoryManaged === true && integerToBigInt(product.stockMilli) > 0n && integerToBigInt(product.stockMilli) <= integerToBigInt(product.lowStockMilli)).length;
-  const outCount = products.filter((product) => product.inventoryManaged === true && integerToBigInt(product.stockMilli) <= 0n).length;
-
-  const cards: Array<[string, string]> = [
-    ["Fresh Milk available", `${formatMilli(stock("MILK-001"))} L`],
-    ["Bread packets available", formatMilli(stock("BREAD-001"))],
-    ["Eggs available", eggStock ? `${eggStock.label} · ${eggStock.totalPieces} total eggs` : formatMilli(stock("EGG-001"))],
-    ["Egg average cost", egg ? formatPKR(integerToBigInt(egg.averageCostPaisa)) : "PKR 0.00"],
-    ["Egg piece price", egg ? formatPKR(integerToBigInt(egg.pieceSellingRatePaisa ?? egg.retailRatePaisa)) : "PKR 0.00"],
-    ["Egg tray price", egg ? formatPKR(integerToBigInt(egg.traySellingRatePaisa ?? 0)) : "PKR 0.00"],
-    ["Egg stock value", egg ? formatPKR(multiplyQuantityRate(integerToBigInt(egg.stockMilli), integerToBigInt(egg.averageCostPaisa))) : "PKR 0.00"],
-    ["Ispaghol packets available", formatMilli(stock("ISPAGHOL-001"))],
-    ["Purchased inventory value", formatPKR(totalValue)],
-    ["Low-stock products", String(lowCount)],
-    ["Out-of-stock products", String(outCount)],
-  ];
-
   return (
     <div className="content">
-      <div className="customer-heading">
-        <div>
-          <div className="title">Inventory</div>
-          <div className="subtitle">
-            Receive stock, review receipts and keep Egg stock in whole pieces.
-          </div>
-        </div>
-        <AddInventoryForm
+      <PageHeader title="Inventory" description="Receive stock, review receipts and keep Egg stock in whole pieces." actions={<AddInventoryForm
           today={karachiBusinessDate()}
           products={products.map((product) => ({
             sku: String(product.sku),
@@ -80,31 +50,19 @@ export default async function InventoryPage({
             averageCostPaisa: integerToBigInt(product.averageCostPaisa).toString(),
             retailRatePaisa: integerToBigInt(product.retailRatePaisa).toString(),
           }))}
-        />
-      </div>
+        />}/>
 
-      <div className="summary-grid inventory-analytics-removed" aria-hidden="true">
-        {cards.map(([label, value]) => (
-          <div className="card" key={label}>
-            <small>{label}</small>
-            <b>{value}</b>
-          </div>
-        ))}
-      </div>
-
-      <div className="customer-heading">
-        <div className="section-title">Receipts</div>
-        <div className="toolbar">
-          <DateFilter/>
-        </div>
-      </div>
+      <SectionHeader title="Receipt history" description="Search, print or reverse inventory receipts." actions={<DateFilter/>}/>
       <form>
         <input type="hidden" name="from" value={filters.from ?? ""} />
         <input type="hidden" name="to" value={filters.to ?? ""} />
+        <input type="hidden" name="product" value={filters.product ?? ""} />
+        <input type="hidden" name="supplier" value={filters.supplier ?? ""} />
         <FilterToolbar>
-          <SearchField defaultValue={filters.q} placeholder="Search receipt, supplier or product" />
+          <SearchField defaultValue={q} placeholder="Search receipt, supplier or product" />
           <button className="button secondary">Search</button>
-          {filters.q ? <span className="result-count">{receipts.length} results</span> : null}
+          {q ? <ClearSearch/> : null}
+          {q ? <span className="result-count">{receipts.length} results</span> : null}
         </FilterToolbar>
       </form>
       <div className="card table-card table-scroll">
@@ -143,19 +101,6 @@ export default async function InventoryPage({
         )}
       </div>
 
-      <div className="card table-card inventory-analytics-removed" aria-hidden="true">
-        <div className="section-title">Manual receipt products</div>
-        <div className="summary-grid">
-          {manualProducts.map((product) => (
-            <div className="card" key={String(product?._id ?? product?.sku)}>
-              <small>{String(product?.name ?? product?.sku)}</small>
-              <b>
-                {formatMilli(integerToBigInt(product?.stockMilli))} {String(product?.unit ?? "")}
-              </b>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

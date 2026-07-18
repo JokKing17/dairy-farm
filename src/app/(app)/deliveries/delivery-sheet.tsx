@@ -1,5 +1,6 @@
 "use client";
 import { useActionState, useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
 import { formatEggStock } from "@/lib/egg-units";
 import { formatMilli, formatPKR, multiplyQuantityRate, quantityToMilli } from "@/lib/money";
 import { postDeliveries, type DeliveryState } from "./actions";
@@ -158,6 +159,21 @@ export function DeliverySheet({ customers, products, today }: { customers: Custo
           </button>
         </div>
       ) : null}
+      <div className="list-search-row">
+        <label className="search-field delivery-search">
+          <span className="sr-only">Search household customers</span>
+          <Search size={17} aria-hidden="true" />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }}
+            placeholder="Search household customer or address"
+          />
+          {search ? <button type="button" className="search-clear" onClick={() => setSearch("")} aria-label="Clear customer search"><X size={16}/></button> : null}
+        </label>
+        <span className="result-count">{lines.filter(line => `${line.name} ${line.address}`.toLowerCase().includes(search.toLowerCase())).length} of {lines.length} customers visible</span>
+      </div>
       <div className="delivery-stock-strip">
         {products.map((product) => {
           const remaining = BigInt(product.stockMilli) - (productAssigned.get(product.sku) ?? 0n);
@@ -174,11 +190,6 @@ export function DeliverySheet({ customers, products, today }: { customers: Custo
           );
         })}
       </div>
-      <label className="search-field delivery-search">
-        <span className="sr-only">Filter household customers</span>
-        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter customer name or address" />
-      </label>
-      {search ? <div className="result-count">{lines.filter(line => `${line.name} ${line.address}`.toLowerCase().includes(search.toLowerCase())).length} visible · all households remain in the posting batch</div> : null}
       <div className="table-scroll">
         <table className="table">
           <thead>

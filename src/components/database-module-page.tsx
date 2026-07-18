@@ -2,7 +2,9 @@ import { db } from "@/lib/db";
 import { businessDateFilter } from "@/lib/date-utils";
 import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
-import { FilterToolbar, SearchField } from "./ui";
+import { FilterToolbar, PageHeader, SearchField } from "./ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { ClearSearch } from "./clear-search";
 
 const display = (value: unknown, key: string) => {
   if (key.toLowerCase().includes("paisa")) return formatPKR(integerToBigInt(value));
@@ -30,28 +32,24 @@ export async function DatabaseModulePage({
       filter[dateField] = bdFilter;
     }
   }
-  if (q) {
-    const regex = { $regex: q, $options: "i" };
-    filter.$or = columns.map(([, key]) => ({ [key]: regex }));
+  const normalizedQuery = normalizeSearchQuery(q);
+  const searchPattern = escapedSearchPattern(normalizedQuery);
+  if (searchPattern) {
+    filter.$or = columns.map(([, key]) => ({ [key]: searchPattern }));
   }
   const rows = await (await db()).collection(collection).find(filter).sort({ createdAt: -1 }).limit(100).toArray();
 
   return (
     <div className="content">
-      <div className="customer-heading">
-        <div>
-          <div className="title">{title}</div>
-          <div className="subtitle">{description}</div>
-        </div>
-        <div className="toolbar"><DateFilter /></div>
-      </div>
+      <PageHeader title={title} description={description} actions={<DateFilter/>}/>
       <form>
         <input type="hidden" name="from" value={from ?? ""} />
         <input type="hidden" name="to" value={to ?? ""} />
         <FilterToolbar>
-          <SearchField defaultValue={q} placeholder={`Search ${title.toLowerCase()}`} />
+          <SearchField defaultValue={normalizedQuery} placeholder={`Search ${title.toLowerCase()}`} />
           <button className="button secondary">Search</button>
-          {q ? <span className="result-count">{rows.length} results</span> : null}
+          {normalizedQuery ? <ClearSearch/> : null}
+          {normalizedQuery ? <span className="result-count">{rows.length} results</span> : null}
         </FilterToolbar>
       </form>
       <div className="card table-card table-scroll">

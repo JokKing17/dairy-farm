@@ -3,6 +3,7 @@ import { formatMilli, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { DeliverySheet } from "./delivery-sheet";
 import { DAILY_DELIVERY_CATALOG_FILTER, DAILY_DELIVERY_CATALOG_SKUS } from "@/lib/product-eligibility";
+import { PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -96,8 +97,7 @@ export default async function DailyDeliveriesPage() {
 
   return (
     <div className="content">
-      <div className="title">Daily Deliveries</div>
-      <div className="subtitle">One simple household list for today. Normal milk quantities are pre-filled.</div>
+      <PageHeader title="Daily Deliveries" description="One simple household list for today. Normal Milk quantities are pre-filled."/>
       {existingBatch ? (
         <div className="card table-card form-success">
           <b>Today was already posted as {String(existingBatch.transactionNo)}</b>

@@ -5,19 +5,22 @@ import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { ShopSaleForm, ShopSaleReversal } from "./shop-sale-form";
-import { FilterToolbar, SearchField } from "@/components/ui";
+import { FilterToolbar, PageHeader, SearchField, SectionHeader } from "@/components/ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { ClearSearch } from "@/components/clear-search";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string }> }) {
   const session = await requireSession();
-  const { from, to, q } = await searchParams;
+  const { from, to, q: rawQuery } = await searchParams;
+  const q = normalizeSearchQuery(rawQuery);
   const database = await db();
   const today = karachiBusinessDate();
   const saleMatch: Record<string, unknown> = businessDateFilter(from, to) ?? {};
-  if (q) {
-    const regex = { $regex: q, $options: "i" };
-    saleMatch.$or = [{ transactionNo: regex }, { customerNameSnapshot: regex }];
+  const searchPattern = escapedSearchPattern(q);
+  if (searchPattern) {
+    saleMatch.$or = [{ transactionNo: searchPattern }, { customerNameSnapshot: searchPattern }];
   }
   const [products, customers, sales] = await Promise.all([
     database.collection("products").find({ active: true, sellable: true, inventoryManaged: true, internalOnly: { $ne: true }, sku: { $ne: "KUNDA-001" } }).sort({ name: 1 }).toArray(),
@@ -27,12 +30,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
 
   return (
     <div className="content">
-      <div className="customer-heading">
-        <div>
-          <div className="title">Shop Sales</div>
-          <div className="subtitle">Fast Paid Now and Credit/Udhaar sales. Walk-in Cash sales need no customer.</div>
-        </div>
-        <ShopSaleForm
+      <PageHeader title="Shop Sales" description="Fast Paid Now and Credit/Udhaar sales. Walk-in Cash sales need no customer." actions={<ShopSaleForm
           today={today}
           products={products.map((product) => ({
             sku: String(product.sku),
@@ -50,20 +48,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
             name: String(customer.name),
             code: String(customer.code),
           }))}
-        />
-      </div>
-      <div className="customer-heading">
-        <div className="section-title">Shop sales history</div>
-        <div className="toolbar">
-          <DateFilter/>
-        </div>
-      </div>
+        />}/>
+      <SectionHeader title="Shop sales history" description="Search and review the latest operational sales." actions={<DateFilter/>}/>
       <form>
         <input type="hidden" name="from" value={from ?? ""} />
         <input type="hidden" name="to" value={to ?? ""} />
         <FilterToolbar>
           <SearchField defaultValue={q} placeholder="Search receipt or customer" />
           <button className="button secondary">Search</button>
+          {q ? <ClearSearch/> : null}
           {q ? <span className="result-count">{sales.length} results</span> : null}
         </FilterToolbar>
       </form>

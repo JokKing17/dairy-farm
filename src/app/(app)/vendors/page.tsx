@@ -3,15 +3,19 @@ import { addDays } from "@/lib/date-utils";
 import { DateFilter } from "@/components/date-filter";
 import { formatPKR, integerToBigInt } from "@/lib/money";
 import { VendorForm } from "./vendor-form";
-import { FilterToolbar, SearchField } from "@/components/ui";
+import { FilterToolbar, PageHeader, SearchField, SectionHeader } from "@/components/ui";
+import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { ClearSearch } from "@/components/clear-search";
 
 export const dynamic = "force-dynamic";
 
 export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string }> }) {
-  const { from, to, q } = await searchParams;
+  const { from, to, q: rawQuery } = await searchParams;
+  const q = normalizeSearchQuery(rawQuery);
+  const searchPattern = escapedSearchPattern(q);
   const database = await db();
   const pipeline: Record<string, unknown>[] = [
-    ...(q ? [{ $match: { $or: ["name", "code", "phone"].map((field) => ({ [field]: { $regex: q, $options: "i" } })) } }] : []),
+    ...(searchPattern ? [{ $match: { $or: ["name", "code", "phone"].map((field) => ({ [field]: searchPattern })) } }] : []),
     { $sort: { name: 1 } },
     { $limit: 100 },
     { $lookup: { from: "party_ledger_entries", localField: "_id", foreignField: "partyId", as: "ledger" } },
@@ -29,22 +33,16 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="content">
-      <div className="customer-heading">
-        <div>
-          <div className="title">Vendors</div>
-          <div className="subtitle">Milk suppliers, immutable rate history and running payables.</div>
-        </div>
-        <div className="toolbar">
-          <DateFilter/>
-        </div>
-      </div>
+      <PageHeader title="Vendors" description="Milk suppliers, immutable rate history and running payables." actions={<DateFilter/>}/>
       <VendorForm />
+      <SectionHeader title="Vendor list" description="Current contact, status and payable information."/>
       <form>
         <input type="hidden" name="from" value={from ?? ""} />
         <input type="hidden" name="to" value={to ?? ""} />
         <FilterToolbar>
           <SearchField defaultValue={q} placeholder="Search name, code or phone" />
           <button className="button secondary">Search</button>
+          {q ? <ClearSearch/> : null}
           {q ? <span className="result-count">{vendors.length} results</span> : null}
         </FilterToolbar>
       </form>
