@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth";
 import { transaction } from "@/lib/db";
 import { rupeesToPaisa } from "@/lib/money";
 import { vendorSchema } from "@/lib/schemas/vendor";
+import { createNotification } from "@/lib/services/notification";
 import { paymentSchema, postPayment } from "@/lib/services/payment";
 
 export type VendorActionState = { error?: string; success?: string };
@@ -69,6 +70,7 @@ export async function createVendor(_: VendorActionState, formData: FormData): Pr
           createdBy: actor.userId,
         }, { session });
       }
+      await createNotification(database, { title: "New vendor added", message: `${parsed.data.name} is ready for milk procurement at PKR ${parsed.data.milkRate}/L.`, category: "vendor", priority: "low", severity: "success", relatedType: "vendor", relatedId: result.insertedId, relatedHref: "/vendors" }, actor.userId, session);
       await database.collection("audit_logs").insertOne({ actorId: actor.userId, action: "create", entity: "vendor", entityId: result.insertedId, createdAt: now }, { session });
     });
   } catch (error) {
@@ -99,6 +101,7 @@ export async function updateVendor(_: VendorActionState, formData: FormData): Pr
         await database.collection("vendor_rate_history").updateMany({ vendorId, productSku: "MILK-001", effectiveTo: null }, { $set: { effectiveTo: now, updatedAt: now, updatedBy: actor.userId } }, { session });
         await database.collection("vendor_rate_history").insertOne({ vendorId, productSku: "MILK-001", previousRatePaisa: currentRate?.ratePaisa ?? null, ratePaisa: Long.fromBigInt(rate), effectiveFrom: now, effectiveTo: null, reason: "Vendor details updated", createdAt: now, createdBy: actor.userId }, { session });
       }
+      await createNotification(database, { title: "Vendor updated", message: `${parsed.data.name} details were updated.`, category: "vendor", priority: "low", severity: "info", relatedType: "vendor", relatedId: vendorId, relatedHref: "/vendors" }, actor.userId, session);
       await database.collection("audit_logs").insertOne({ actorId: actor.userId, action: "update", entity: "vendor", entityId: vendorId, createdAt: now }, { session });
     });
   } catch (error) {
@@ -117,6 +120,7 @@ export async function deactivateVendor(_: VendorActionState, formData: FormData)
       const vendorId = new ObjectId(id), now = new Date();
       const result = await database.collection("vendors").updateOne({ _id: vendorId, active: true }, { $set: { active: false, deactivatedAt: now, deactivatedBy: actor.userId, updatedAt: now, updatedBy: actor.userId } }, { session });
       if (!result.modifiedCount) throw new Error("Vendor is missing or already inactive.");
+      await createNotification(database, { title: "Vendor deactivated", message: "A vendor account was safely deactivated.", category: "vendor", priority: "medium", severity: "warning", relatedType: "vendor", relatedId: vendorId, relatedHref: "/vendors" }, actor.userId, session);
       await database.collection("audit_logs").insertOne({ actorId: actor.userId, action: "deactivate", entity: "vendor", entityId: vendorId, createdAt: now }, { session });
     });
   } catch (error) { return { error: error instanceof Error ? error.message : "Vendor could not be deactivated." }; }

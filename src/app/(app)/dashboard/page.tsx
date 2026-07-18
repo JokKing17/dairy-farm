@@ -91,7 +91,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <ChartCard title="Expenses by category" description="Where operating cash was spent." summary={`${data.expenseCategories.length} expense categories have activity.`}>{data.expenseCategories.length ? <CompositionChart data={data.expenseCategories.map(row=>({name:name(row._id),value:paisa(row.amount)}))} moneyValues/> : <EmptyState title="No expenses" description="Posted expenses will appear here."/>}</ChartCard>
       </div></section>
 
-      <section><SectionHeader title="Alerts & attention" description="Operational exceptions that may need action."/><div className="card">{data.alerts.length ? data.alerts.map(alert => <div className="alert" key={alert._id.toString()}><span className={`dot severity-${String(alert.severity ?? "info")}`}/><div><b>{String(alert.title ?? "Operational alert")}</b><div className="subtitle">{String(alert.message ?? "Review this item")}</div></div></div>) : <EmptyState title="No open alerts" description="There are no operational exceptions requiring attention."/>}</div></section>
+      <section><SectionHeader title="Alerts & attention" description="Recent unread notifications and operational warnings."/><div className="card alert-stack">{data.alerts.length ? data.alerts.map(alert => {
+        const content = <><span className={`dot severity-${String(alert.severity ?? "info")}`}/><div><b>{String(alert.title ?? "Operational alert")}</b><div className="subtitle">{String(alert.message ?? "Review this item")}</div><span className="badge">{name(alert.category)}</span></div></>;
+        return alert.relatedHref ? <Link className="alert alert-link" key={alert._id.toString()} href={String(alert.relatedHref)}>{content}</Link> : <div className="alert" key={alert._id.toString()}>{content}</div>;
+      }) : <EmptyState title="No open alerts" description="There are no operational exceptions requiring attention."/>}<div className="toolbar"><Link className="button secondary" href="/notifications">Open Notification Center</Link></div></div></section>
     </div>
   </div>;
 }

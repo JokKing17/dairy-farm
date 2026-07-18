@@ -3,6 +3,7 @@ import { z } from "zod";
 import { transaction } from "../db";
 import { transactionNo } from "../ids";
 import { integerToBigInt, multiplyQuantityRate, quantityToMilli, rupeesToPaisa } from "../money";
+import { createNotification } from "./notification";
 
 export const procurementInputSchema = z.object({
   businessDate: z.iso.date(),
@@ -91,6 +92,7 @@ export async function postProcurementBatch(rawInput: ProcurementInput, actorId: 
     const averageCost = newStock > 0n ? (previousStockMilli * previousAverageCostPaisa + totalAmountPaisa * 1000n) / newStock : 0n;
     await database.collection("products").updateOne({ _id: milk._id }, { $set: { stockMilli: Long.fromBigInt(newStock), averageCostPaisa: Long.fromBigInt(averageCost), updatedAt: now, updatedBy: actorId } }, { session });
     await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "procurement", amountPaisa: Long.fromBigInt(totalAmountPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
+    await createNotification(database, { title: "Milk procurement posted", message: `${(Number(totalQuantityMilli) / 1000).toLocaleString()} L milk procured for PKR ${(Number(totalAmountPaisa) / 100).toLocaleString()}.`, category: "milk_procurement", priority: "medium", severity: "success", relatedType: "procurement_batch", relatedId: number, relatedHref: "/quick-entry" }, actorId, session);
     await database.collection("audit_logs").insertOne({ actorId, action: "post", entity: "procurement_batch", entityId: header.insertedId, metadata: { transactionNo: number, totalQuantityMilli: totalQuantityMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString(), previousStockMilli: previousStockMilli.toString(), previousAverageCostPaisa: previousAverageCostPaisa.toString() }, createdAt: now }, { session });
     const result = { transactionNo: number, totalQuantityMilli: totalQuantityMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };
     await database.collection("idempotency_records").insertOne({ key: input.idempotencyKey, operation: "procurement", result, createdAt: now }, { session });

@@ -6,6 +6,7 @@ import { transactionNo } from "../ids";
 import { validatePiecesPerTray } from "../egg-units";
 import { integerToBigInt, quantityToMilli } from "../money";
 import { isDailyDeliveryProduct } from "../product-eligibility";
+import { createLowStockNotifications, createNotification } from "./notification";
 
 const productInput = z.object({
   sku: z.string().min(1).max(30),
@@ -165,7 +166,9 @@ export async function postDailyDeliveries(raw: DeliveryInput, actorId: string) {
     } else {
       await database.collection("financial_transactions").insertOne({ transactionNo: number, kind: "customer_delivery", amountPaisa: Long.fromBigInt(totalAmountPaisa), costOfGoodsSoldPaisa: Long.fromBigInt(totalCostOfGoodsSoldPaisa), grossProfitPaisa: Long.fromBigInt(grossProfitPaisa), businessDate: input.businessDate, status: "posted", createdAt: now, createdBy: actorId }, { session });
     }
-    if (skippedCustomers > 0) await database.collection("notifications").insertOne({ title: "Today's household deliveries are incomplete.", message: `${skippedCustomers} customer${skippedCustomers === 1 ? " was" : "s were"} skipped or paused.`, severity: "warning", status: "open", relatedType: "daily_delivery_batch", relatedId: number, relatedHref: "/deliveries", createdAt: now, createdBy: actorId }, { session });
+    await createLowStockNotifications(database, [...inventoryRequired.keys()], actorId, session);
+    await createNotification(database, { title: existing ? "New household deliveries appended" : "Daily deliveries posted", message: `${deliveredCustomers} delivered, ${skippedCustomers} skipped/paused for ${input.businessDate}.`, category: "household_deliveries", priority: skippedCustomers > 0 ? "high" : "medium", severity: skippedCustomers > 0 ? "warning" : "success", relatedType: "daily_delivery_batch", relatedId: number, relatedHref: "/deliveries" }, actorId, session);
+    if (skippedCustomers > 0) await createNotification(database, { title: "Household deliveries need attention", message: `${skippedCustomers} customer${skippedCustomers === 1 ? " was" : "s were"} skipped or paused.`, category: "household_deliveries", priority: "high", severity: "warning", relatedType: "daily_delivery_batch", relatedId: number, relatedHref: "/deliveries" }, actorId, session);
     await database.collection("audit_logs").insertOne({ actorId, action: existing ? "supplement" : "post", entity: "daily_delivery_batch", entityId: number, metadata: { businessDate: input.businessDate, deliveredCustomers, skippedCustomers }, createdAt: now }, { session });
     const result = { transactionNo: number, deliveredCustomers, skippedCustomers, totalMilkMilli: totalMilkMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };
     await database.collection("idempotency_records").insertOne({ key: input.idempotencyKey, operation: "daily_deliveries", result, createdAt: now }, { session });

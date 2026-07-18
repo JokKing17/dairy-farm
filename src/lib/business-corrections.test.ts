@@ -31,6 +31,11 @@ describe("Customer payment analytics",()=>{
  it("surfaces customer payments in dashboard and reports without treating them as revenue",()=>{const queries=readFileSync(resolve("src/lib/queries.ts"),"utf8"),reports=readFileSync(resolve("src/app/(app)/reports/page.tsx"),"utf8"),dashboard=readFileSync(resolve("src/app/(app)/dashboard/page.tsx"),"utf8"),actions=readFileSync(resolve("src/app/(app)/customers/actions.ts"),"utf8");expect(queries).toContain('partyType: "customer"');expect(queries).toContain("dailyCustomerPayments");expect(reports).toContain("Customer collections");expect(dashboard).toContain("Customer collections");expect(actions).toContain('"/dashboard"');expect(actions).toContain('"/reports"')});
 });
 
+describe("Notification Center",()=>{
+ it("provides read state, categories, filters and dashboard links",()=>{const page=readFileSync(resolve("src/app/(app)/notifications/page.tsx"),"utf8"),actions=readFileSync(resolve("src/app/(app)/notifications/actions.ts"),"utf8"),dashboard=readFileSync(resolve("src/app/(app)/dashboard/page.tsx"),"utf8");expect(page).toContain("Notification Center");expect(page).toContain("category");expect(page).toContain("Unread");expect(page).toContain("Mark as read");expect(actions).toContain('status: "read"');expect(actions).toContain("readAt");expect(dashboard).toContain("Open Notification Center");expect(dashboard).toContain("relatedHref")});
+ it("generates notifications from meaningful business events",()=>{for(const file of ["src/lib/services/procurement.ts","src/lib/services/delivery.ts","src/lib/services/shop-sale.ts","src/lib/services/payment.ts","src/lib/services/inventory-receipt.ts","src/lib/services/expense.ts"])expect(readFileSync(resolve(file),"utf8")).toContain("createNotification");expect(readFileSync(resolve("src/lib/services/notification.ts"),"utf8")).toContain("createLowStockNotifications");expect(readFileSync(resolve("src/app/(app)/vendors/actions.ts"),"utf8")).toContain("New vendor added")});
+});
+
 describe("Kunda container allocation",()=>{
  it("suggests four 3.5 kg and one 3 kg Kunda for 17 kg",()=>expect(suggestKundaBreakdown(17000n)).toMatchObject({threePointFiveKg:4,threeKg:1,looseMilli:0n}));
  it("suggests eight 3.5 kg and two 3 kg Kunda for 34 kg",()=>expect(suggestKundaBreakdown(34000n)).toMatchObject({threePointFiveKg:8,threeKg:2,looseMilli:0n}));

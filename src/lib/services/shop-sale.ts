@@ -8,6 +8,7 @@ import {
   multiplyQuantityRate,
   quantityToMilli,
 } from "../money";
+import { createLowStockNotifications, createNotification } from "./notification";
 
 const EGG_SKU = "EGG-001";
 
@@ -421,6 +422,12 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
         },
         { session },
       );
+    await createLowStockNotifications(database, input.lines.map((line) => line.sku), actorId, session);
+    if (input.paymentType === "credit") {
+      await createNotification(database, { title: "Shop credit sale recorded", message: `${String(customer?.name ?? "Shop customer")} now owes PKR ${(Number(total) / 100).toLocaleString()} for ${number}.`, category: "credit_customers", priority: "high", severity: "warning", relatedType: "shop_sale", relatedId: number, relatedHref: "/sales" }, actorId, session);
+    } else if (total >= 1_000_000n) {
+      await createNotification(database, { title: "Large shop sale completed", message: `Paid shop sale ${number} posted for PKR ${(Number(total) / 100).toLocaleString()}.`, category: "shop_sales", priority: "medium", severity: "success", relatedType: "shop_sale", relatedId: number, relatedHref: "/sales" }, actorId, session);
+    }
     await database
       .collection("audit_logs")
       .insertOne(

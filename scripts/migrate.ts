@@ -29,7 +29,7 @@ const indexes: Record<string, IndexDescription[]> = {
   cashbook_entries: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { businessDate: 1, account: 1, status: 1 } }],
   financial_transactions: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: 1, kind: 1, status: 1 } }],
   daily_closings: [{ key: { businessDate: 1, account: 1 }, unique: true }],
-  notifications: [{ key: { status: 1, severity: 1, createdAt: -1 } }],
+  notifications: [{ key: { status: 1, severity: 1, createdAt: -1 } }, { key: { status: 1, category: 1, createdAt: -1 } }, { key: { status: 1, priority: 1, createdAt: -1 } }],
   audit_logs: [{ key: { entity: 1, entityId: 1, createdAt: -1 } }, { key: { createdAt: -1 } }],
 };
 

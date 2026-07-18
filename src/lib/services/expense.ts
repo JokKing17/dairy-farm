@@ -4,6 +4,7 @@ import { transaction } from "../db";
 import { transactionNo } from "../ids";
 import { rupeesToPaisa } from "../money";
 import { EXPENSE_CATEGORIES, EXPENSE_PAYMENT_METHODS } from "../expense-constants";
+import { createNotification } from "./notification";
 
 export const expenseInputSchema = z.object({
   businessDate: z.iso.date(),
@@ -99,6 +100,10 @@ export async function postExpense(rawInput: ExpenseInput, actorId: string) {
       },
       { session },
     );
+
+    if (amountPaisa >= 1_000_000n) {
+      await createNotification(database, { title: "Large expense recorded", message: `${input.category} expense posted for PKR ${(Number(amountPaisa) / 100).toLocaleString()}.`, category: "expenses", priority: "high", severity: "warning", relatedType: "expense", relatedId: number, relatedHref: "/expenses" }, actorId, session);
+    }
 
     await database.collection("audit_logs").insertOne(
       {
