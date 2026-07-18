@@ -22,6 +22,11 @@ describe("Shop Sale posting",()=>{
  it("rejects direct Kunda product sales",()=>expect(service).toContain('line.sku === "KUNDA-001"'));
 });
 
+describe("Vendor payable management",()=>{
+ it("records vendor payments as ledger debits and prevents overpayment",()=>{const payment=readFileSync(resolve("src/lib/services/payment.ts"),"utf8");expect(payment).toContain('partyType:"vendor"');expect(payment).toContain('"Vendor payment"');expect(payment).toContain("Vendor payment cannot exceed the outstanding balance");expect(payment).toContain('$subtract:["$creditPaisa","$debitPaisa"]')});
+ it("shows vendor payables, payment entry and payment history",()=>{const page=readFileSync(resolve("src/app/(app)/vendors/page.tsx"),"utf8"),form=readFileSync(resolve("src/app/(app)/vendors/vendor-form.tsx"),"utf8");expect(page).toContain("Vendor Payables Dashboard");expect(page).toContain("Vendor payment history");expect(form).toContain("Record Vendor Payment");expect(form).toContain("Pay vendor")});
+});
+
 describe("Kunda container allocation",()=>{
  it("suggests four 3.5 kg and one 3 kg Kunda for 17 kg",()=>expect(suggestKundaBreakdown(17000n)).toMatchObject({threePointFiveKg:4,threeKg:1,looseMilli:0n}));
  it("suggests eight 3.5 kg and two 3 kg Kunda for 34 kg",()=>expect(suggestKundaBreakdown(34000n)).toMatchObject({threePointFiveKg:8,threeKg:2,looseMilli:0n}));

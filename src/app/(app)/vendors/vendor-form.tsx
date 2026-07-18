@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { createVendor, deactivateVendor, updateVendor, type VendorActionState } from "./actions";
+import { useActionState, useState } from "react";
+import { createVendor, deactivateVendor, recordVendorPayment, updateVendor, type VendorActionState } from "./actions";
+import { formatPKR } from "@/lib/money";
 
 const initialState: VendorActionState = {};
 
@@ -22,7 +23,7 @@ export function VendorForm() {
   );
 }
 
-export type VendorRow = { id: string; code: string; name: string; phone: string; whatsapp: string; address: string; notes: string; active: boolean; milkRate: string };
+export type VendorRow = { id: string; code: string; name: string; phone: string; whatsapp: string; address: string; notes: string; active: boolean; milkRate: string; payablePaisa: string };
 
 export function VendorActions({ vendor }: { vendor: VendorRow }) {
   const [updateState, updateAction, updating] = useActionState(updateVendor, initialState);
@@ -57,5 +58,39 @@ export function VendorActions({ vendor }: { vendor: VendorRow }) {
         ) : null}
       </div>
     </details>
+  );
+}
+
+export function VendorPaymentForm({ vendor, today }: { vendor: VendorRow; today: string }) {
+  const [state, action, pending] = useActionState(recordVendorPayment, initialState);
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState(() => crypto.randomUUID());
+  const payable = BigInt(vendor.payablePaisa || "0");
+  return (
+    <>
+      <button className="button secondary" type="button" disabled={!vendor.active || payable <= 0n} onClick={() => { setKey(crypto.randomUUID()); setOpen(true); }}>
+        Pay vendor
+      </button>
+      {open ? (
+        <div className="review-dialog" role="dialog" aria-modal="true">
+          <form action={action} className="card review-card">
+            <input type="hidden" name="partyId" value={vendor.id} />
+            <input type="hidden" name="idempotencyKey" value={key} />
+            <div className="section-title">Record Vendor Payment</div>
+            <p className="subtitle">{vendor.name} outstanding: {formatPKR(payable)}</p>
+            {state.error ? <div className="form-error">{state.error}</div> : null}
+            {state.success ? <div className="form-success">{state.success}</div> : null}
+            <div className="field"><label>Payment date</label><input name="businessDate" type="date" defaultValue={today} required /></div>
+            <div className="field"><label>Amount (PKR)</label><input name="amount" inputMode="decimal" required autoFocus /></div>
+            <div className="field"><label>Payment method</label><select name="method" defaultValue="cash"><option value="cash">Cash</option><option value="bank">Bank</option><option value="easypaisa">Easypaisa</option><option value="jazzcash">JazzCash</option></select></div>
+            <div className="field"><label>Notes</label><textarea name="notes" /></div>
+            <div className="toolbar">
+              <button type="button" className="button secondary" onClick={() => setOpen(false)}>Cancel</button>
+              <button className="button" disabled={pending}>{pending ? "Saving…" : "Save payment"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </>
   );
 }

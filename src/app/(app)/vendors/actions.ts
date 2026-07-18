@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth";
 import { transaction } from "@/lib/db";
 import { rupeesToPaisa } from "@/lib/money";
 import { vendorSchema } from "@/lib/schemas/vendor";
+import { paymentSchema, postPayment } from "@/lib/services/payment";
 
 export type VendorActionState = { error?: string; success?: string };
 const vendorUpdateSchema = vendorSchema.extend({ id: z.string().min(1) });
@@ -121,4 +122,17 @@ export async function deactivateVendor(_: VendorActionState, formData: FormData)
   } catch (error) { return { error: error instanceof Error ? error.message : "Vendor could not be deactivated." }; }
   revalidatePath("/vendors"); revalidatePath("/quick-entry");
   return { success: "Vendor deactivated." };
+}
+
+export async function recordVendorPayment(_: VendorActionState, formData: FormData): Promise<VendorActionState> {
+  const actor = await requireSession(["owner", "manager", "accountant"]);
+  const parsed = paymentSchema.safeParse({ ...Object.fromEntries(formData), partyType: "vendor" });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the vendor payment details." };
+  try {
+    const result = await postPayment(parsed.data, actor.userId);
+    for (const path of ["/vendors", "/cashbook", "/dashboard", "/reports"]) revalidatePath(path);
+    return { success: `Payment ${result.transactionNo} recorded.` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Vendor payment could not be recorded." };
+  }
 }
