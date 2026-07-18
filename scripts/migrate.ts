@@ -88,7 +88,7 @@ async function migrateProductInventoryRules() {
     {sku:"MILK-001",name:"Fresh Milk",unit:"liter",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"},
     {sku:"YOG-001",name:"Yogurt / Dahi",unit:"kilogram",category:"dairy",active:true,inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"yogurt-production"},
     {sku:"BREAD-001",name:"Bread",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
-    {sku:"EGG-001",name:"Eggs",unit:"tray",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
+    {sku:"EGG-001",name:"Eggs",unit:"piece",baseUnit:"piece",purchaseUnit:"tray",saleUnits:["piece","tray"],piecesPerTray:30,defaultSaleUnit:"piece",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
     {sku:"ISPAGHOL-001",name:"Ispaghol / Psyllium Husk",unit:"packet",category:"retail",active:true,inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"},
     {sku:"KUNDA-001",name:"Kunda Dahi",unit:"pot",category:"internal",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true},
     {sku:"GL-001",name:"Gold Leaf",unit:"packet",category:"disabled",active:false,inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false},
@@ -111,6 +111,16 @@ async function migrateCustomerTypes() {
   );
 }
 
+async function migrateEggUnits() {
+  const products=database.collection("products"),egg=await products.findOne({sku:"EGG-001"});
+  if(!egg||egg.eggInventoryUnitVersion===2)return;
+  const piecesPerTray=30,oldStock=BigInt(String(egg.stockMilli??0)),oldCost=BigInt(String(egg.averageCostPaisa??0)),oldRate=BigInt(String(egg.retailRatePaisa??0)),now=new Date(),convertedStock=oldStock*BigInt(piecesPerTray),pieceCost=(oldCost+BigInt(piecesPerTray)/2n)/BigInt(piecesPerTray),pieceRate=oldRate>0n?(oldRate+BigInt(piecesPerTray)-1n)/BigInt(piecesPerTray):0n;
+  const backup={migration:"egg_inventory_unit_v2",sourceId:egg._id,document:egg,createdAt:now};
+  await database.collection("migration_backups").updateOne({migration:backup.migration,sourceId:egg._id},{$setOnInsert:backup},{upsert:true});
+  await products.updateOne({_id:egg._id,eggInventoryUnitVersion:{$ne:2}},{$set:{unit:"piece",baseUnit:"piece",purchaseUnit:"tray",saleUnits:["piece","tray"],piecesPerTray,defaultSaleUnit:"piece",stockMilli:Long.fromBigInt(convertedStock),averageCostPaisa:Long.fromBigInt(pieceCost),retailRatePaisa:Long.fromBigInt(pieceRate),pieceSellingRatePaisa:Long.fromBigInt(pieceRate),traySellingRatePaisa:Long.fromBigInt(oldRate),eggInventoryUnitVersion:2,updatedAt:now}});
+  await database.collection("unit_migration_audits").updateOne({migration:"egg_inventory_unit_v2",productSku:"EGG-001"},{$setOnInsert:{migration:"egg_inventory_unit_v2",productSku:"EGG-001",previousStockMilli:egg.stockMilli,convertedStockMilli:Long.fromBigInt(convertedStock),previousUnit:egg.unit??"tray",newUnit:"piece",previousAverageCostPaisa:egg.averageCostPaisa,newAverageCostPaisa:Long.fromBigInt(pieceCost),previousRatePaisa:egg.retailRatePaisa,newPieceRatePaisa:Long.fromBigInt(pieceRate),newTrayRatePaisa:Long.fromBigInt(oldRate),conversionFactor:piecesPerTray,migratedAt:now}},{upsert:true});
+}
+
 async function removeObsoleteInventoryMovementIndexes() {
   const collection = database.collection("inventory_movements");
   const existingIndexes = await collection.indexes().catch(() => []);
@@ -125,6 +135,7 @@ async function removeObsoleteInventoryMovementIndexes() {
 async function main() {
   await removeObsoleteDeliveryGrouping();
   await assertNoDuplicateDailyHistory();
+  await migrateEggUnits();
   await migrateProductInventoryRules();
   await migrateCustomerTypes();
   await migrateYogurtProductionSettingsAndHistory();

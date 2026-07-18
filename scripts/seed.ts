@@ -26,11 +26,11 @@ async function main() {
     { upsert: true },
   );
 
-  const products: [string, string, string, string, number, Record<string,boolean|string>][] = [
+  const products: [string, string, string, string, number, Record<string,unknown>][] = [
     ["MILK-001", "Fresh Milk", "liter", "dairy", 20000, {inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"}],
     ["YOG-001", "Yogurt / Dahi", "kilogram", "dairy", 24000, {inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"yogurt-production"}],
     ["BREAD-001", "Bread", "packet", "retail", 12000, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"}],
-    ["EGG-001", "Eggs", "tray", "retail", 48000, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"}],
+    ["EGG-001", "Eggs", "piece", "retail", 0, {baseUnit:"piece",purchaseUnit:"tray",saleUnits:["piece","tray"],piecesPerTray:"30",defaultSaleUnit:"piece",inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"}],
     ["ISPAGHOL-001", "Ispaghol / Psyllium Husk", "packet", "retail", 0, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"}],
     ["KUNDA-001", "Kunda Dahi", "pot", "internal", 0, {inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true}],
     ["GL-001", "Gold Leaf", "packet", "disabled", 0, {inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false}],
