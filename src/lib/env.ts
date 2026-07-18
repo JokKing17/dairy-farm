@@ -20,6 +20,9 @@ const schema = z
     R2_SECRET_ACCESS_KEY: optionalR2,
     R2_BUCKET: optionalR2,
     R2_PUBLIC_URL: optionalR2,
+    SEED_OWNER_EMAIL: z.string().email().trim().toLowerCase().default("owner@example.com"),
+    SEED_OWNER_PASSWORD: z.string().min(8).default("changeme123!"),
+    SEED_OWNER_NAME: z.string().trim().default("Business Owner"),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV === "production" && (!value.SESSION_SECRET || knownWeakSecrets.has(value.SESSION_SECRET.toLowerCase()))) {
@@ -38,4 +41,7 @@ export const env = {
   ...parsed,
   SESSION_SECRET: parsed.SESSION_SECRET ?? "development-only-secret-change-me-123456",
   R2_ENABLED: Boolean(parsed.R2_ENDPOINT),
+  SEED_OWNER_EMAIL: parsed.SEED_OWNER_EMAIL,
+  SEED_OWNER_PASSWORD: parsed.SEED_OWNER_PASSWORD,
+  SEED_OWNER_NAME: parsed.SEED_OWNER_NAME,
 };
