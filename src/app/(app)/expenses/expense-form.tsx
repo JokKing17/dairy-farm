@@ -88,7 +88,7 @@ export function ExpenseForm({ today }: { today: string }) {
             ))}
           </select>
         </div>
-        <div className="field" style={{ gridColumn: "1 / -1" }}>
+        <div className="field form-full">
           <label>Description (optional)</label>
           <input
             type="text"
@@ -100,7 +100,7 @@ export function ExpenseForm({ today }: { today: string }) {
         </div>
       </div>
 
-      <div className="toolbar" style={{ marginTop: 14 }}>
+      <div className="toolbar form-footer">
         <button
           type="button"
           className="button"
@@ -120,7 +120,7 @@ export function ExpenseForm({ today }: { today: string }) {
             <div className="review-line"><span>Amount</span><b>{formatPKR(previewAmount)}</b></div>
             <div className="review-line"><span>Payment method</span><b>{paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}</b></div>
             {description ? <div className="review-line"><span>Description</span><b>{description}</b></div> : null}
-            <div className="toolbar" style={{ marginTop: 14 }}>
+            <div className="toolbar form-footer">
               <button type="button" className="button secondary" onClick={() => setReviewing(false)}>Go back</button>
               <button className="button" disabled={pending}>{pending ? "Posting…" : "Confirm and post"}</button>
             </div>

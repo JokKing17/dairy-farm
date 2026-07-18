@@ -10,19 +10,19 @@ export function ReverseExpenseForm({ transactionNo }: { transactionNo: string })
   const [open, setOpen] = useState(false);
 
   if (state.error) {
-    return <div className="form-error" role="alert" style={{ fontSize: 12 }}>{state.error}</div>;
+    return <div className="form-error" style={{ fontSize: "var(--text-xs)" }} role="alert">{state.error}</div>;
   }
 
   if (!open) {
-    return <button className="button secondary" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => setOpen(true)}>Reverse</button>;
+    return <button className="button secondary small-button" onClick={() => setOpen(true)}>Reverse</button>;
   }
 
   return (
-    <form action={action} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+    <form action={action} className="inline-form">
       <input type="hidden" name="transactionNo" value={transactionNo} />
-      <input name="reason" type="text" placeholder="Reason…" required minLength={5} style={{ fontSize: 12, padding: "2px 6px", width: 140 }} />
-      <button className="button" style={{ fontSize: 12, padding: "2px 8px" }} disabled={pending}>{pending ? "…" : "Confirm"}</button>
-      <button type="button" className="button secondary" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => { setOpen(false); state.error = undefined; }}>Cancel</button>
+      <input name="reason" type="text" placeholder="Reason…" required minLength={5} className="small-button" style={{ width: 140 }} />
+      <button className="button small-button" disabled={pending}>{pending ? "…" : "Confirm"}</button>
+      <button type="button" className="button secondary small-button" onClick={() => { setOpen(false); state.error = undefined; }}>Cancel</button>
     </form>
   );
 }

@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, ChartNoAxesCombined, Factory, LayoutDashboard, Milk, ReceiptText, Settings, ShoppingBasket, Truck, Users, WalletCards, Warehouse, Zap } from "lucide-react";
+import {
+  Bell, ChartNoAxesCombined, Factory, LayoutDashboard, Milk,
+  ReceiptText, Settings, ShoppingBasket, Truck, Users, WalletCards,
+  Warehouse, Zap,
+} from "lucide-react";
 
 const groups = [
   { name: "Workspace", items: [["Dashboard", "/dashboard", LayoutDashboard], ["Quick Entry", "/quick-entry", Zap]] },
@@ -15,16 +19,23 @@ export function Sidebar() {
   const pathname = usePathname();
   return (
     <aside className="sidebar">
-      <div className="brand"><b className="brandmark"><Milk size={20} /></b><span>DairyFlow</span></div>
+      <div className="brand">
+        <span className="brandmark"><Milk size={20} /></span>
+        <span>DairyFlow</span>
+      </div>
       <nav className="nav" aria-label="Main navigation">
         {groups.map((group) => (
           <div key={group.name}>
             <div className="navgroup">{group.name}</div>
-            {group.items.map(([name, href, Icon]) => (
-              <Link key={name} href={href} className={pathname === href || pathname.startsWith(`${href}/`) ? "active" : undefined}>
-                <Icon size={16} /><span>{name}</span>
-              </Link>
-            ))}
+            {group.items.map(([name, href, Icon]) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link key={name} href={href} className={active ? "active" : undefined}>
+                  <Icon size={16} />
+                  <span>{name}</span>
+                </Link>
+              );
+            })}
           </div>
         ))}
       </nav>

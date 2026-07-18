@@ -56,7 +56,7 @@ export default async function ExpensesPage({
         </div>
       </div>
 
-      <section className="grid kpis" style={{ marginBottom: 22 }}>
+      <section className="grid kpis">
         <article className="card">
           <div className="kpi-label">Total expenses</div>
           <div className="kpi-value">{formatPKR(totalAmount)}</div>
@@ -67,15 +67,13 @@ export default async function ExpensesPage({
         </article>
         <article className="card">
           <div className="kpi-label">Period</div>
-          <div className="kpi-value" style={{ fontSize: 16 }}>{from && to ? `${from} – ${to}` : from ?? to ?? "All time"}</div>
+          <div className="kpi-value kpi-period">{from && to ? `${from} – ${to}` : from ?? to ?? "All time"}</div>
         </article>
       </section>
 
-      <details className="card" style={{ marginBottom: 22 }}>
-        <summary className="button secondary" style={{ cursor: "pointer", display: "inline-block" }}>
-          Add expense
-        </summary>
-        <div style={{ marginTop: 16 }}>
+      <details className="card add-form">
+        <summary className="button secondary open-form">Add expense</summary>
+        <div className="add-form-body">
           <ExpenseForm today={today} />
         </div>
       </details>

@@ -27,7 +27,7 @@ export function SettingsForm({
     {} as SettingsState,
   );
   return (
-    <form action={action} className="card formgrid" style={{ marginTop: 22 }}>
+    <form action={action} className="card formgrid" style={{ marginTop: "var(--s-6)" }}>
       {state.error ? <div className="form-error">{state.error}</div> : null}
       {state.success ? (
         <div className="form-success">{state.success}</div>

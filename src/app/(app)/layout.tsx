@@ -17,9 +17,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <ConnectionStatus />
           </div>
           <div className="toolbar">
-            <Link className="button secondary" href="/dashboard"><CalendarDays size={14} /> Today</Link>
-            <span className="badge">{session.name} · {session.role}</span>
-            <form action={logout}><button className="button secondary">Log out</button></form>
+            <Link className="button secondary" href="/dashboard"><CalendarDays size={14} /><span>Today</span></Link>
+            <span className="badge neutral">{session.name} · {session.role}</span>
+            <form action={logout}>
+              <button className="button ghost" type="submit">Log out</button>
+            </form>
           </div>
         </header>
         {children}
