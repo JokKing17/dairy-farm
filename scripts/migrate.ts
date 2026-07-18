@@ -13,7 +13,7 @@ const indexes: Record<string, IndexDescription[]> = {
   customers: [{ key: { code: 1 }, unique: true }, { key: { active: 1, customerType: 1, deliverySequence: 1, name: 1 } }, { key: { phone: 1 } }],
   customer_rate_history: [{ key: { customerId: 1, effectiveFrom: -1 } }],
   products: [{ key: { sku: 1 }, unique: true }, { key: { active: 1, name: 1 } }],
-  product_rate_history: [{ key: { productSku: 1, effectiveFrom: -1 } }, { key: { sourceTransactionNo: 1, productSku: 1 }, unique: true, partialFilterExpression: { sourceTransactionNo: { $type: "string" } } }],
+  product_rate_history: [{ key: { productSku: 1, effectiveFrom: -1 } }, { key: { sourceTransactionNo: 1, productSku: 1, saleUnit: 1 }, unique: true, partialFilterExpression: { sourceTransactionNo: { $type: "string" } } }],
   inventory_receipts: [{ key: { transactionNo: 1 }, unique: true }, { key: { idempotencyKey: 1 }, unique: true }, { key: { businessDate: -1, status: 1 } }, { key: { "lines.productSku": 1, businessDate: -1 } }, { key: { supplierReference: 1 }, partialFilterExpression: { supplierReference: { $type: "string" } } }],
   procurement_batches: [{ key: { transactionNo: 1 }, unique: true }, { key: { businessDate: -1, shift: 1 } }],
   milk_purchases: [{ key: { transactionNo: 1, lineNo: 1 }, unique: true }, { key: { vendorId: 1, businessDate: 1, shift: 1 }, unique: true, partialFilterExpression: { status: "posted" } }],
@@ -132,6 +132,19 @@ async function removeObsoleteInventoryMovementIndexes() {
   }
 }
 
+async function migrateProductRateHistoryIndex() {
+  const collection = database.collection("product_rate_history");
+  const existingIndexes = await collection.indexes().catch(() => []);
+  for (const index of existingIndexes) {
+    if (index.name === "_id_") continue;
+    const fields = Object.keys(index.key ?? {});
+    if (fields.length === 2 && fields.includes("sourceTransactionNo") && fields.includes("productSku")) {
+      // Drop the old unique index that didn't include saleUnit
+      await collection.dropIndex(index.name!);
+    }
+  }
+}
+
 async function main() {
   await removeObsoleteDeliveryGrouping();
   await assertNoDuplicateDailyHistory();
@@ -140,6 +153,7 @@ async function main() {
   await migrateCustomerTypes();
   await migrateYogurtProductionSettingsAndHistory();
   await removeObsoleteInventoryMovementIndexes();
+  await migrateProductRateHistoryIndex();
   for (const [name, definitions] of Object.entries(indexes)) {
     for (const definition of definitions) await database.collection(name).createIndex(definition.key, definition);
   }
