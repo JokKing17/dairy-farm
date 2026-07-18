@@ -62,6 +62,18 @@ export async function postInventoryReceipt(raw:InventoryReceiptInput,actorId:str
       const previous = await database.collection("idempotency_records").findOne({ key: input.idempotencyKey });
       console.log(JSON.stringify({ event: "postInventoryReceipt:duplicate", idempotencyKey: input.idempotencyKey, foundPrevious: Boolean(previous) }));
       if (previous) return previous.result as { transactionNo: string; subtotalPaisa: string; paidAmountPaisa: string; balances: Array<{ sku: string; stockMilli: string; averageCostPaisa: string; retailRatePaisa: string }> };
+      // If idempotency record is missing, try to find the inserted inventory receipt itself.
+      const receipt = await database.collection("inventory_receipts").findOne({ idempotencyKey: input.idempotencyKey });
+      if (receipt) {
+        console.log(JSON.stringify({ event: "postInventoryReceipt:foundReceipt", idempotencyKey: input.idempotencyKey, transactionNo: receipt.transactionNo }));
+        const result = {
+          transactionNo: receipt.transactionNo,
+          subtotalPaisa: String(receipt.subtotalPaisa ?? receipt.subtotal ?? 0),
+          paidAmountPaisa: String(receipt.paidAmountPaisa ?? receipt.paidAmount ?? 0),
+          balances: (receipt.lines ?? []).map((l: any) => ({ sku: l.productSku, stockMilli: String(l.resultingStockMilli ?? l.quantityMilli ?? 0), averageCostPaisa: String(l.resultingAverageCostPaisa ?? 0), retailRatePaisa: String(l.sellingUnitRatePaisa ?? l.pieceSellingRatePaisa ?? 0) })),
+        };
+        return result;
+      }
       throw new Error("This inventory receipt was already saved. Refresh to see it in history.");
     }
     console.error(JSON.stringify({ event: "postInventoryReceipt:error", idempotencyKey: input.idempotencyKey, message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined }));
