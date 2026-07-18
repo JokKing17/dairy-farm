@@ -32,7 +32,7 @@ export async function createCustomer(_:ActionState,data:FormData):Promise<Action
   }catch(error){return{error:error&&typeof error==="object"&&"code" in error&&error.code===11000?"Customer code already exists.":"Customer could not be saved."};}
 }
 
-export async function recordCustomerPayment(_:ActionState,data:FormData):Promise<ActionState>{const actor=await requireSession(["owner","manager","accountant","cashier"]);const parsed=paymentSchema.safeParse(Object.fromEntries(data));if(!parsed.success)return{error:"Check the payment amount and method."};try{const result=await postPayment(parsed.data,actor.userId);revalidatePath("/customers");revalidatePath("/cashbook");return{success:`Receipt ${result.transactionNo}`};}catch(error){return{error:error instanceof Error?error.message:"Payment could not be recorded."};}}
+export async function recordCustomerPayment(_:ActionState,data:FormData):Promise<ActionState>{const actor=await requireSession(["owner","manager","accountant","cashier"]);const parsed=paymentSchema.safeParse(Object.fromEntries(data));if(!parsed.success)return{error:"Check the payment amount and method."};try{const result=await postPayment(parsed.data,actor.userId);for(const path of ["/customers","/cashbook","/dashboard","/reports"])revalidatePath(path);return{success:`Receipt ${result.transactionNo}`};}catch(error){return{error:error instanceof Error?error.message:"Payment could not be recorded."};}}
 
 export async function updateCustomer(_:ActionState,data:FormData):Promise<ActionState>{
   const actor=await requireSession(["owner","manager","accountant"]),parsed=customerUpdateSchema.safeParse(Object.fromEntries(data));

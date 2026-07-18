@@ -27,6 +27,10 @@ describe("Vendor payable management",()=>{
  it("shows vendor payables, payment entry and payment history",()=>{const page=readFileSync(resolve("src/app/(app)/vendors/page.tsx"),"utf8"),form=readFileSync(resolve("src/app/(app)/vendors/vendor-form.tsx"),"utf8");expect(page).toContain("Vendor Payables Dashboard");expect(page).toContain("Vendor payment history");expect(form).toContain("Record Vendor Payment");expect(form).toContain("Pay vendor")});
 });
 
+describe("Customer payment analytics",()=>{
+ it("surfaces customer payments in dashboard and reports without treating them as revenue",()=>{const queries=readFileSync(resolve("src/lib/queries.ts"),"utf8"),reports=readFileSync(resolve("src/app/(app)/reports/page.tsx"),"utf8"),dashboard=readFileSync(resolve("src/app/(app)/dashboard/page.tsx"),"utf8"),actions=readFileSync(resolve("src/app/(app)/customers/actions.ts"),"utf8");expect(queries).toContain('partyType: "customer"');expect(queries).toContain("dailyCustomerPayments");expect(reports).toContain("Customer collections");expect(dashboard).toContain("Customer collections");expect(actions).toContain('"/dashboard"');expect(actions).toContain('"/reports"')});
+});
+
 describe("Kunda container allocation",()=>{
  it("suggests four 3.5 kg and one 3 kg Kunda for 17 kg",()=>expect(suggestKundaBreakdown(17000n)).toMatchObject({threePointFiveKg:4,threeKg:1,looseMilli:0n}));
  it("suggests eight 3.5 kg and two 3 kg Kunda for 34 kg",()=>expect(suggestKundaBreakdown(34000n)).toMatchObject({threePointFiveKg:8,threeKg:2,looseMilli:0n}));

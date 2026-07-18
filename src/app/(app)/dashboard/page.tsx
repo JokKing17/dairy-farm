@@ -27,6 +27,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const revenue = big(data.sales?.amount);
   const purchaseCost = big(data.purchases?.amount);
   const expenses = big(data.expenses?.amount);
+  const customerCollections = big(data.customerPayments?.amount);
   const grossProfit = revenue - purchaseCost;
   const operatingResult = grossProfit - expenses;
   const daily = new Map<string, ChartDatum>();
@@ -61,6 +62,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <MetricCard label="Gross profit (estimated)" value={formatPKR(grossProfit)} note="Revenue − Milk procurement cost" tone={grossProfit >= 0n ? "success" : "danger"} />
         <MetricCard label="Operating expenses" value={formatPKR(expenses)} note="Posted expense transactions" tone="danger" />
         <MetricCard label="Operating result (estimated)" value={formatPKR(operatingResult)} note="Gross profit − operating expenses" tone={operatingResult >= 0n ? "brand" : "danger"} />
+        <MetricCard label="Customer collections" value={formatPKR(customerCollections)} note={`${Number(big(data.customerPayments?.count))} payments received`} tone="brand" />
         <MetricCard label="Customer receivables" value={formatPKR(big(data.receivables?.balance))} note="Current amount to collect" tone="info" />
         <MetricCard label="Vendor payables" value={formatPKR(big(data.payables?.balance))} note="Current amount to pay" tone="warning" />
       </div>
