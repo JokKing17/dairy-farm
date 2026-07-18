@@ -17,6 +17,7 @@ describe("Shop Sale posting",()=>{
  it("supports anonymous Paid Now and requires Shop Customer for Credit",()=>{expect(service).toContain('input.paymentType === "credit" && !customer');expect(service).toContain('customer?.name ?? "Walk-in customer"')});
  it("separates Cash and Credit accounting",()=>{expect(service).toContain('collection("cashbook_entries")');expect(service).toContain('collection("party_ledger_entries")');expect(service).toContain('input.paymentType === "cash"');expect(service).toContain('input.paymentType === "credit"')});
  it("snapshots rates, costs, COGS and gross profit",()=>{for(const field of ["sellingRatePaisa","unitCostPaisa","costOfGoodsSoldPaisa","grossProfitPaisa"])expect(service).toContain(field)});
+ it("includes Shop Sales in dashboard and report revenue",()=>{const queries=readFileSync(resolve("src/lib/queries.ts"),"utf8");expect(queries).toContain('"shop_cash_sale"');expect(queries).toContain('"shop_credit_sale"');expect(queries).toContain('"shop_sale_reversal"')});
  it("is atomic and idempotent",()=>{expect(service).toContain("return transaction");expect(service).toContain('collection("idempotency_records")')});
  it("rejects direct Kunda product sales",()=>expect(service).toContain('line.sku === "KUNDA-001"'));
 });
