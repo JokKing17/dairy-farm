@@ -114,6 +114,24 @@ export async function saveSettings(
         },
         createdAt: now,
       });
+    // Sync Fresh Milk shop selling rate into the MILK-001 product so shop sales pick it up
+    try {
+      const milk = await database.collection("products").findOne({ sku: "MILK-001" });
+      if (milk) {
+        const previousMilkRate = integerToBigInt(milk.retailRatePaisa);
+        const newMilkRate = rupeesToPaisa(value.shopRate);
+        if (previousMilkRate !== newMilkRate) {
+          // close any existing open rate history records for milk
+          await database.collection("product_rate_history").updateMany({ productId: milk._id, effectiveTo: null }, { $set: { effectiveTo: now, updatedAt: now, updatedBy: actor.userId } });
+          // insert new rate history row
+          await database.collection("product_rate_history").insertOne({ productId: milk._id, productSku: "MILK-001", saleUnit: String(milk.unit ?? "liter"), previousRatePaisa: Long.fromBigInt(previousMilkRate), ratePaisa: Long.fromBigInt(newMilkRate), effectiveFrom: now, effectiveTo: null, source: "business_settings", createdAt: now, createdBy: actor.userId });
+          // update product current retail rate
+          await database.collection("products").updateOne({ _id: milk._id }, { $set: { retailRatePaisa: Long.fromBigInt(newMilkRate), updatedAt: now, updatedBy: actor.userId } });
+        }
+      }
+    } catch {
+      // non-fatal: do not break settings save if milk sync fails
+    }
     for (const path of ["/settings", "/production", "/reports","/inventory","/sales","/deliveries"])
       revalidatePath(path);
     return { success: "Business settings saved." };
