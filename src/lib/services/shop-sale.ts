@@ -43,6 +43,10 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
       throw new Error(
         "Do not select a payment account for an unpaid Credit sale.",
       );
+    const settings = await database
+      .collection("business_settings")
+      .findOne({ _id: "default" as never }, { session });
+    const shopMilkRatePaisa = integerToBigInt(settings?.shopRatePaisa);
     let customer: Document | null = null;
     if (input.customerId) {
       if (!ObjectId.isValid(input.customerId))
@@ -116,9 +120,10 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
       let packaging: Document | null = null;
       let enteredQuantity = entered;
       let enteredUnit = String(product.unit);
-      let sellingRatePerEnteredUnitPaisa = integerToBigInt(product.retailRatePaisa);
+      const defaultMilkRatePaisa = product.sku === "MILK-001" && integerToBigInt(product.retailRatePaisa) <= 0n ? shopMilkRatePaisa : integerToBigInt(product.retailRatePaisa);
+      let sellingRatePerEnteredUnitPaisa = defaultMilkRatePaisa;
       const unitCostPaisa = integerToBigInt(product.averageCostPaisa);
-      const pieceSellingRateSnapshotPaisa = integerToBigInt(product.pieceSellingRatePaisa, integerToBigInt(product.retailRatePaisa));
+      const pieceSellingRateSnapshotPaisa = integerToBigInt(product.pieceSellingRatePaisa, defaultMilkRatePaisa);
       const traySellingRateSnapshotPaisa = integerToBigInt(product.traySellingRatePaisa);
       const piecesPerTraySnapshot = validatePiecesPerTray(product.piecesPerTray);
       let normalizedPieceQuantity = entered;
@@ -222,7 +227,7 @@ export async function postShopSale(raw: ShopSaleInput, actorId: string) {
           remaining -= used;
         }
       }
-      const rate = line.sku === EGG_SKU ? sellingRatePerEnteredUnitPaisa : integerToBigInt(product.retailRatePaisa),
+      const rate = line.sku === EGG_SKU ? sellingRatePerEnteredUnitPaisa : defaultMilkRatePaisa,
         cost = line.sku === EGG_SKU ? unitCostPaisa : integerToBigInt(product.averageCostPaisa);
       if (rate <= 0n)
         throw new Error(

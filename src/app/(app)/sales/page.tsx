@@ -22,11 +22,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
   if (searchPattern) {
     saleMatch.$or = [{ transactionNo: searchPattern }, { customerNameSnapshot: searchPattern }];
   }
-  const [products, customers, sales] = await Promise.all([
+  const [settings, products, customers, sales] = await Promise.all([
+    database.collection("business_settings").findOne({ _id: "default" as never }),
     database.collection("products").find({ active: true, sellable: true, inventoryManaged: true, internalOnly: { $ne: true }, sku: { $ne: "KUNDA-001" } }).sort({ name: 1 }).toArray(),
     database.collection("customers").find({ active: true, customerType: "shop" }).sort({ name: 1 }).toArray(),
     database.collection("sales").find({ channel: "shop", ...saleMatch }).sort({ createdAt: -1 }).limit(100).toArray(),
   ]);
+  const milkRatePaisa = integerToBigInt(settings?.shopRatePaisa);
 
   return (
     <div className="content">
@@ -36,7 +38,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ f
             sku: String(product.sku),
             name: String(product.name),
             unit: String(product.unit),
-            ratePaisa: integerToBigInt(product.retailRatePaisa).toString(),
+            ratePaisa: String(product.sku === "MILK-001" && integerToBigInt(product.retailRatePaisa) <= 0n ? milkRatePaisa : integerToBigInt(product.retailRatePaisa)),
             stockMilli: integerToBigInt(product.stockMilli).toString(),
             pieceSellingRatePaisa: integerToBigInt(product.pieceSellingRatePaisa ?? product.retailRatePaisa).toString(),
             traySellingRatePaisa: integerToBigInt(product.traySellingRatePaisa).toString(),
