@@ -1,6 +1,7 @@
 import type { Document, Filter } from "mongodb";
 import { integerToBigInt } from "./money";
-export const DAILY_DELIVERY_CATALOG_SKUS=["YOG-001","BREAD-001","EGG-001","ISPAGHOL-001"] as const;
+import { getDailyDeliveryCatalogSkus } from "./product-catalog";
+export const DAILY_DELIVERY_CATALOG_SKUS = getDailyDeliveryCatalogSkus() as readonly string[];
 export const DAILY_DELIVERY_CATALOG_FILTER:Filter<Document>={sku:{$in:[...DAILY_DELIVERY_CATALOG_SKUS]},active:true,sellable:true,inventoryManaged:true,availableInDailyDelivery:true,internalOnly:{$ne:true}};
 export function isDailyDeliveryCatalogProduct(product:Document|undefined):product is Document{
   return Boolean(product&&DAILY_DELIVERY_CATALOG_SKUS.includes(String(product.sku) as typeof DAILY_DELIVERY_CATALOG_SKUS[number])&&product.active===true&&product.sellable===true&&product.inventoryManaged===true&&product.availableInDailyDelivery===true&&product.internalOnly!==true);

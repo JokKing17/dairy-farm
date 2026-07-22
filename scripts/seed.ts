@@ -1,5 +1,6 @@
 import argon2 from "argon2";
 import { Long, MongoClient } from "mongodb";
+import { getDefaultProductCatalog } from "../src/lib/product-catalog";
 
 const uri = process.env.MONGODB_URI ?? "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true";
 const name = process.env.MONGODB_DB ?? "dairyflow";
@@ -26,19 +27,41 @@ async function main() {
     { upsert: true },
   );
 
-  const products: [string, string, string, string, number, Record<string,unknown>][] = [
-    ["MILK-001", "Fresh Milk", "liter", "dairy", 20000, {inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:false,internalOnly:false,stockSource:"vendor-procurement"}],
-    ["YOG-001", "Yogurt / Dahi", "kilogram", "dairy", 24000, {inventoryManaged:true,allowManualStockReceipt:false,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"yogurt-production"}],
-    ["BREAD-001", "Bread Packets", "packet", "retail", 12000, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"}],
-    ["EGG-001", "Eggs", "piece", "retail", 0, {baseUnit:"piece",purchaseUnit:"tray",saleUnits:["piece","tray"],piecesPerTray:30,defaultSaleUnit:"piece",inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt",pieceSellingRatePaisa:0,traySellingRatePaisa:0,eggInventoryUnitVersion:2}],
-    ["ISPAGHOL-001", "Ispaghol Husk Packets", "packet", "retail", 0, {inventoryManaged:true,allowManualStockReceipt:true,sellable:true,availableInDailyDelivery:true,internalOnly:false,stockSource:"inventory-receipt"}],
-    ["KUNDA-001", "Kunda Dahi", "pot", "internal", 0, {inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:true}],
-    ["GL-001", "Gold Leaf", "packet", "disabled", 0, {inventoryManaged:false,allowManualStockReceipt:false,sellable:false,availableInDailyDelivery:false,internalOnly:false}],
-  ];
-  for (const [sku, productName, unit, category, rate, flags] of products) {
+  for (const product of getDefaultProductCatalog()) {
     await database.collection("products").updateOne(
-      { sku },
-      { $setOnInsert: { sku, name: productName, unit, category, retailRatePaisa: Long.fromNumber(rate), stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.fromNumber(5000), active: sku!=="GL-001", ...flags, createdAt: now, updatedAt: now } },
+      { sku: product.sku },
+      {
+        $setOnInsert: {
+          sku: product.sku,
+          name: product.name,
+          unit: product.unit,
+          category: product.category,
+          retailRatePaisa: Long.fromNumber(product.retailRatePaisa ?? 0),
+          stockMilli: Long.ZERO,
+          averageCostPaisa: Long.ZERO,
+          lowStockMilli: Long.fromNumber(product.lowStockMilli ?? 0),
+          active: product.active ?? false,
+          inventoryManaged: product.inventoryManaged ?? false,
+          allowManualStockReceipt: product.allowManualStockReceipt ?? false,
+          sellable: product.sellable ?? false,
+          availableInDailyDelivery: product.availableInDailyDelivery ?? false,
+          internalOnly: product.internalOnly ?? false,
+          stockSource: product.stockSource,
+          baseUnit: product.baseUnit,
+          purchaseUnit: product.purchaseUnit,
+          saleUnits: product.saleUnits,
+          piecesPerTray: product.piecesPerTray,
+          defaultSaleUnit: product.defaultSaleUnit,
+          pieceSellingRatePaisa: product.pieceSellingRatePaisa ?? 0,
+          traySellingRatePaisa: product.traySellingRatePaisa ?? 0,
+          variantGroup: product.variantGroup,
+          variantName: product.variantName,
+          parentSku: product.parentSku,
+          eggInventoryUnitVersion: product.sku === "EGG-001" ? 2 : undefined,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
       { upsert: true },
     );
   }

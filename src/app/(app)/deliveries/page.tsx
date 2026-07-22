@@ -3,6 +3,7 @@ import { formatMilli, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { DeliverySheet } from "./delivery-sheet";
 import { DAILY_DELIVERY_CATALOG_FILTER, DAILY_DELIVERY_CATALOG_SKUS } from "@/lib/product-eligibility";
+import { getProductCatalogBySku } from "@/lib/product-catalog";
 import { PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -54,21 +55,9 @@ export default async function DailyDeliveriesPage() {
   }));
 
   const productMap = new Map(products.map((product) => [String(product.sku), product]));
-  const names: Record<string, string> = {
-    "YOG-001": "Yogurt / Dahi",
-    "BREAD-001": "Bread",
-    "EGG-001": "Eggs",
-    "ISPAGHOL-001": "Ispaghol / Psyllium Husk",
-  };
-  const units: Record<string, string> = {
-    "YOG-001": "kilogram",
-    "BREAD-001": "packet",
-    "EGG-001": "piece",
-    "ISPAGHOL-001": "packet",
-  };
-
   const productRows = DAILY_DELIVERY_CATALOG_SKUS.map((sku) => {
     const product = productMap.get(sku);
+    const catalogEntry = getProductCatalogBySku(sku);
     const stock = integerToBigInt(product?.stockMilli);
     const source = sku === "YOG-001" ? "yogurt-production" : "inventory-receipt";
     const pieceSellingRatePaisa = integerToBigInt(product?.pieceSellingRatePaisa, product?.retailRatePaisa);
@@ -85,8 +74,8 @@ export default async function DailyDeliveriesPage() {
 
     return {
       sku,
-      name: String(product?.name ?? names[sku]),
-      unit: String(product?.unit ?? units[sku]),
+      name: String(product?.name ?? catalogEntry?.name ?? sku),
+      unit: String(product?.unit ?? catalogEntry?.unit ?? "unit"),
       ratePaisa: integerToBigInt(product?.retailRatePaisa).toString(),
       stockMilli: stock.toString(),
       stockSource: String(product?.stockSource ?? source),

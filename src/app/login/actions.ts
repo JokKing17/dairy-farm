@@ -9,6 +9,7 @@ import { createSession, destroySession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { roles, type Role } from "@/lib/types";
+import { getDefaultProductCatalog } from "@/lib/product-catalog";
 
 const loginSchema = z.object({
   email: z.email().trim().toLowerCase(),
@@ -40,14 +41,44 @@ export async function login(_: LoginState, formData: FormData): Promise<LoginSta
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    await database.collection("products").bulkWrite([
-      { updateOne: { filter: { sku: "MILK-001" }, update: { $setOnInsert: { sku: "MILK-001", name: "Fresh Milk", unit: "liter", category: "dairy", retailRatePaisa: Long.fromNumber(20000), stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.fromNumber(5000), active: true, inventoryManaged: true, allowManualStockReceipt: false, sellable: true, availableInDailyDelivery: false, internalOnly: false, stockSource: "vendor-procurement", createdAt: new Date(), updatedAt: new Date() } }, upsert: true } },
-      { updateOne: { filter: { sku: "YOG-001" }, update: { $setOnInsert: { sku: "YOG-001", name: "Yogurt / Dahi", unit: "kilogram", category: "dairy", retailRatePaisa: Long.fromNumber(24000), stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.fromNumber(5000), active: true, inventoryManaged: true, allowManualStockReceipt: false, sellable: true, availableInDailyDelivery: true, internalOnly: false, stockSource: "yogurt-production", createdAt: new Date(), updatedAt: new Date() } }, upsert: true } },
-      { updateOne: { filter: { sku: "BREAD-001" }, update: { $setOnInsert: { sku: "BREAD-001", name: "Bread Packets", unit: "packet", category: "retail", retailRatePaisa: Long.ZERO, stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.ZERO, active: true, inventoryManaged: true, allowManualStockReceipt: true, sellable: true, availableInDailyDelivery: true, internalOnly: false, stockSource: "inventory-receipt", createdAt: new Date(), updatedAt: new Date() } }, upsert: true } },
-      { updateOne: { filter: { sku: "EGG-001" }, update: { $setOnInsert: { sku: "EGG-001", name: "Eggs", unit: "piece", category: "retail", retailRatePaisa: Long.ZERO, stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.ZERO, active: true, inventoryManaged: true, allowManualStockReceipt: true, sellable: true, availableInDailyDelivery: true, internalOnly: false, stockSource: "inventory-receipt", baseUnit: "piece", purchaseUnit: "tray", saleUnits: ["piece", "tray"], piecesPerTray: 30, defaultSaleUnit: "piece", pieceSellingRatePaisa: 0, traySellingRatePaisa: 0, eggInventoryUnitVersion: 2, createdAt: new Date(), updatedAt: new Date() } }, upsert: true } },
-      { updateOne: { filter: { sku: "ISPAGHOL-001" }, update: { $setOnInsert: { sku: "ISPAGHOL-001", name: "Ispaghol Husk Packets", unit: "packet", category: "retail", retailRatePaisa: Long.ZERO, stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, lowStockMilli: Long.ZERO, active: true, inventoryManaged: true, allowManualStockReceipt: true, sellable: true, availableInDailyDelivery: true, internalOnly: false, stockSource: "inventory-receipt", createdAt: new Date(), updatedAt: new Date() } }, upsert: true } },
-      { updateOne: { filter: { sku: "KUNDA-001" }, update: { $setOnInsert: { sku: "KUNDA-001", name: "Kunda Dahi", unit: "pot", category: "internal", retailRatePaisa: Long.ZERO, stockMilli: Long.ZERO, averageCostPaisa: Long.ZERO, active: true, inventoryManaged: false, allowManualStockReceipt: false, sellable: false, availableInDailyDelivery: false, internalOnly: true, createdAt: new Date(), updatedAt: new Date() } }, upsert: true } },
-    ]);
+    await database.collection("products").bulkWrite(getDefaultProductCatalog().map((product) => ({
+      updateOne: {
+        filter: { sku: product.sku },
+        update: {
+          $setOnInsert: {
+            sku: product.sku,
+            name: product.name,
+            unit: product.unit,
+            category: product.category,
+            retailRatePaisa: Long.fromNumber(product.retailRatePaisa ?? 0),
+            stockMilli: Long.ZERO,
+            averageCostPaisa: Long.ZERO,
+            lowStockMilli: Long.fromNumber(product.lowStockMilli ?? 0),
+            active: product.active ?? false,
+            inventoryManaged: product.inventoryManaged ?? false,
+            allowManualStockReceipt: product.allowManualStockReceipt ?? false,
+            sellable: product.sellable ?? false,
+            availableInDailyDelivery: product.availableInDailyDelivery ?? false,
+            internalOnly: product.internalOnly ?? false,
+            stockSource: product.stockSource,
+            baseUnit: product.baseUnit,
+            purchaseUnit: product.purchaseUnit,
+            saleUnits: product.saleUnits,
+            piecesPerTray: product.piecesPerTray,
+            defaultSaleUnit: product.defaultSaleUnit,
+            pieceSellingRatePaisa: product.pieceSellingRatePaisa ?? 0,
+            traySellingRatePaisa: product.traySellingRatePaisa ?? 0,
+            variantGroup: product.variantGroup,
+            variantName: product.variantName,
+            parentSku: product.parentSku,
+            eggInventoryUnitVersion: product.sku === "EGG-001" ? 2 : undefined,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        },
+        upsert: true,
+      },
+    })));
     await database.collection("business_settings").updateOne(
       { _id: "default" as never },
       { $setOnInsert: { businessName: "DairyFlow Milk & Yogurt", currency: "PKR", timezone: "Asia/Karachi", invoicePrefix: "DF", costingMethod: "moving-weighted-average", yogurtAutomaticMilkRatioParts: 40, yogurtAutomaticOutputRatioParts: 34, yogurtAutomaticYieldMilli: 850, yogurtAutomaticLossMilli: 150, yogurtYieldToleranceMilli: 20, yogurtDefaultProductionMode: "automatic", yogurtMilkInputUnit: "kilogram", milkInventoryUnit: "liter", customerRatePaisa: 15000, allowedBackdateDays: 3, createdAt: new Date(), updatedAt: new Date() } },
