@@ -8,6 +8,7 @@ import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
 import { EmptyState, FilterToolbar, PageHeader, SearchField } from "@/components/ui";
 import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
+import { MasterWhatsAppBroadcastButton } from "@/components/master-whatsapp-broadcast";
 import { CustomerActions, CustomerForm, PaymentForm } from "./customer-forms";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   };
 
   return <div className="content">
-    <PageHeader title="Customers" description="Household deliveries and Shop Customer Udhaar accounts." actions={<><DateFilter/>{type === "household" ? <Link className="button" href="/deliveries">Open Daily Deliveries</Link> : <Link className="button" href="/sales">New Shop Sale</Link>}</>}/>
+    <PageHeader title="Customers" description="Household deliveries and Shop Customer Udhaar accounts." actions={<><DateFilter/>{type === "household" ? <><MasterWhatsAppBroadcastButton entity="customers" /><Link className="button" href="/deliveries">Open Daily Deliveries</Link></> : <Link className="button" href="/sales">New Shop Sale</Link>}</>}/>
     <CustomerForm/>
     <nav className="toolbar customer-tabs" aria-label="Customer type"><Link className={`button ${type === "household" ? "" : "secondary"}`} href={tabHref("household")}>Household Deliveries</Link><Link className={`button ${type === "shop" ? "" : "secondary"}`} href={tabHref("shop")}>Shop Customers</Link></nav>
     <form>

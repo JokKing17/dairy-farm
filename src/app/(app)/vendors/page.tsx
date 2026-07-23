@@ -8,6 +8,7 @@ import { formatVendorAccountSummaryMessage } from "@/lib/customer-statement-calc
 import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
 import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
 import { VendorActions, VendorForm, VendorPaymentForm } from "./vendor-form";
+import { MasterWhatsAppBroadcastButton } from "@/components/master-whatsapp-broadcast";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="content">
-      <PageHeader title="Vendors" description="Milk suppliers, payables, payment history and running balances." actions={<DateFilter/>}/>
+      <PageHeader title="Vendors" description="Milk suppliers, payables, payment history and running balances." actions={<><DateFilter/><MasterWhatsAppBroadcastButton entity="vendors" /></>}/>
       <VendorForm />
 
       <SectionHeader title="Vendor Payables Dashboard" description={`Filtered activity from ${from} to ${to}; outstanding balance is current.`}/>
