@@ -3,6 +3,8 @@ import { DateFilter } from "@/components/date-filter";
 import { DataTableContainer, EmptyState, FilterToolbar, MetricCard, PageHeader, SearchField, SectionHeader } from "@/components/ui";
 import { db } from "@/lib/db";
 import { addDays, karachiBusinessDate } from "@/lib/date-utils";
+import { normalizePakistanPhone } from "@/lib/customer-statement";
+import { formatVendorAccountSummaryMessage } from "@/lib/customer-statement-calculations";
 import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
 import { escapedSearchPattern, normalizeSearchQuery } from "@/lib/search";
 import { VendorActions, VendorForm, VendorPaymentForm } from "./vendor-form";
@@ -82,8 +84,22 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
             <thead><tr><th>Vendor</th><th>Period Milk</th><th>Period Procurement</th><th>Period Paid</th><th>Current Outstanding</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>{vendors.map((vendor) => {
               const payable = integerToBigInt(vendor.payable);
+              const periodProcurementPaisa = integerToBigInt(vendor.periodProcurementPaisa);
+              const periodPaidPaisa = integerToBigInt(vendor.periodPaidPaisa);
+              const previousOutstanding = payable - periodProcurementPaisa + periodPaidPaisa;
+              const number = normalizePakistanPhone(String(vendor.whatsapp ?? vendor.phone ?? ""));
+              const message = encodeURIComponent(formatVendorAccountSummaryMessage({
+                vendorName: String(vendor.name),
+                date: to,
+                todayMilkQuantityMilli: integerToBigInt(vendor.periodQuantityMilli),
+                todayProcurementAmountPaisa: periodProcurementPaisa,
+                previousOutstandingPaisa: previousOutstanding,
+                totalProcurementValuePaisa: integerToBigInt(vendor.allProcurement),
+                totalPaymentsReceivedPaisa: integerToBigInt(vendor.allPaid),
+                currentRemainingPayablePaisa: payable,
+              }));
               const vendorRow = { id: vendor._id.toString(), code: String(vendor.code), name: String(vendor.name), phone: String(vendor.phone ?? ""), whatsapp: String(vendor.whatsapp ?? ""), address: String(vendor.address ?? ""), notes: String(vendor.notes ?? ""), active: Boolean(vendor.active), milkRate: paisaInput(vendor.ratePaisa), payablePaisa: payable.toString() };
-              return <tr key={vendorRow.id}><td><b>{vendor.name}</b><div className="subtitle">{vendor.code} · {vendor.phone || "No phone"}</div></td><td>{formatMilli(integerToBigInt(vendor.periodQuantityMilli))} L<div className="subtitle">{Number(vendor.periodEntries)} entries</div></td><td>{formatPKR(integerToBigInt(vendor.periodProcurementPaisa))}</td><td>{formatPKR(integerToBigInt(vendor.periodPaidPaisa))}<div className="subtitle">{Number(vendor.periodPayments)} payments</div></td><td><b>{formatPKR(payable)}</b><div className="subtitle">{payable <= 0n ? "Fully paid" : "Payable"}</div></td><td><span className="badge">{vendor.active ? "Active" : "Inactive"}</span></td><td><div className="toolbar row-actions"><VendorPaymentForm vendor={vendorRow} today={today}/><VendorActions vendor={vendorRow}/></div></td></tr>;
+              return <tr key={vendorRow.id}><td><b>{vendor.name}</b><div className="subtitle">{vendor.code} · {vendor.phone || "No phone"}</div></td><td>{formatMilli(integerToBigInt(vendor.periodQuantityMilli))} L<div className="subtitle">{Number(vendor.periodEntries)} entries</div></td><td>{formatPKR(periodProcurementPaisa)}</td><td>{formatPKR(periodPaidPaisa)}<div className="subtitle">{Number(vendor.periodPayments)} payments</div></td><td><b>{formatPKR(payable)}</b><div className="subtitle">{payable <= 0n ? "Fully paid" : "Payable"}</div></td><td><span className="badge">{vendor.active ? "Active" : "Inactive"}</span></td><td><div className="toolbar row-actions"><VendorPaymentForm vendor={vendorRow} today={today}/><VendorActions vendor={vendorRow}/>{number ? <a className="button secondary" href={`https://wa.me/${number}?text=${message}`} target="_blank" rel="noreferrer">WhatsApp</a> : <button className="button secondary" disabled>Add WhatsApp number</button>}</div></td></tr>;
             })}</tbody>
           </table>
         )}

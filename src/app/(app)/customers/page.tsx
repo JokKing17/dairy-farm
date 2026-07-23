@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { addDays } from "@/lib/date-utils";
 import { normalizePakistanPhone } from "@/lib/customer-statement";
+import { formatCustomerAccountSummaryMessage } from "@/lib/customer-statement-calculations";
 import { DateFilter } from "@/components/date-filter";
 import { formatMilli, formatPKR, integerToBigInt } from "@/lib/money";
 import { karachiBusinessDate } from "@/lib/queries";
@@ -64,8 +65,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
     <div className="card table-card table-scroll">{rows.length ? <table className="table"><thead><tr>{type === "household" ? <><th>Customer</th><th>Address</th><th>Daily Milk</th><th>This month</th><th>Payments</th></> : <><th>Shop Customer</th><th>Total Credit</th><th>Total payments</th><th>Last Credit / payment</th></>}<th>Outstanding</th><th>Actions</th></tr></thead><tbody>{rows.map(row => {
       const ledger = row.ledger?.[0], delivery = row.deliveries?.[0], customerId = row._id.toString();
       const balance = integerToBigInt(ledger?.debit) - integerToBigInt(ledger?.credit);
+      const currentPeriodCharges = integerToBigInt(ledger?.monthDebit);
+      const currentPeriodPayments = integerToBigInt(ledger?.monthCredit);
+      const previousOutstanding = balance - currentPeriodCharges + currentPeriodPayments;
       const number = normalizePakistanPhone(String(row.whatsapp || row.phone || ""));
-      const message = encodeURIComponent(type === "shop" ? `Assalam-o-Alaikum ${row.name}. Your remaining shop Udhaar balance is ${formatPKR(balance)}. Please send payment when convenient. Thank you.` : `Assalam-o-Alaikum ${row.name}. Your remaining DairyFlow balance is ${formatPKR(balance)}.`);
+      const message = encodeURIComponent(type === "shop"
+        ? `Assalam-o-Alaikum ${row.name}. Your remaining shop Udhaar balance is ${formatPKR(balance)}. Please send payment when convenient. Thank you.`
+        : formatCustomerAccountSummaryMessage({
+            customerName: String(row.name),
+            date: to ?? businessDate,
+            todayMilkQuantityMilli: integerToBigInt(delivery?.milk),
+            todayChargesPaisa: integerToBigInt(delivery?.charges),
+            previousOutstandingPaisa: previousOutstanding,
+            totalChargesPaisa: integerToBigInt(ledger?.debit),
+            totalPaymentsPaisa: integerToBigInt(ledger?.credit),
+            currentOutstandingPaisa: balance,
+          }));
       const customerAction = <CustomerActions customer={{id:customerId,name:String(row.name),phone:String(row.phone??""),whatsapp:String(row.whatsapp??""),address:String(row.address??""),customerType:type,dailyQuantity:formatMilli(integerToBigInt(row.defaultQuantityMilli)),startDate:String(row.startDate??businessDate),paused:Boolean(row.paused),deliverySequence:row.deliverySequence?String(row.deliverySequence):"",notes:String(row.notes??""),active:Boolean(row.active),milkRate:paisaInput(row.rate?.[0]?.ratePaisa)}}/>;
       return <tr key={customerId}>{type === "household" ? <><td><b>{row.name}</b><div className="subtitle">{row.code}{row.active ? "" : " · Inactive"}</div></td><td>{row.address}</td><td>{formatMilli(integerToBigInt(row.defaultQuantityMilli))} L</td><td>{formatMilli(integerToBigInt(delivery?.milk))} L · {formatPKR(integerToBigInt(delivery?.charges))}</td><td>{formatPKR(integerToBigInt(ledger?.monthCredit))}</td></> : <><td><b>{row.name}</b><div className="subtitle">{row.phone || "No phone"}{row.active ? "" : " · Inactive"}</div></td><td>{formatPKR(integerToBigInt(ledger?.debit))}</td><td>{formatPKR(integerToBigInt(ledger?.credit))}</td><td>{ledger?.lastCredit || "—"} / {ledger?.lastPayment || "—"}</td></>}<td><b>{formatPKR(balance)}</b></td><td><div className="toolbar row-actions"><PaymentForm id={customerId} businessDate={businessDate}/><Link className="button secondary" href={`/customers/${row._id}?month=${month}`}>Statement</Link>{customerAction}{number ? <a className="button secondary" href={`https://wa.me/${number}?text=${message}`} target="_blank" rel="noreferrer">WhatsApp</a> : <button className="button secondary" disabled>Add WhatsApp number</button>}</div></td></tr>;
     })}</tbody></table> : <EmptyState title={q ? "No matching customers" : `No ${type === "shop" ? "Shop Customers" : "Household Delivery Customers"} yet`} description={q ? "Try a different name, code, address or phone number." : "Add the first customer above."}/>}</div>
