@@ -19,7 +19,21 @@ export const procurementInputSchema = z.object({
   })).min(1).max(100),
 });
 
+export const procurementEditSchema = z.object({
+  transactionNo: z.string().min(1),
+  lineNo: z.number().int().positive(),
+  vendorId: z.string().refine(ObjectId.isValid, "Invalid vendor"),
+  businessDate: z.iso.date(),
+  shift: z.enum(["morning", "evening", "custom"]),
+  quantity: z.string(),
+  overrideRate: z.string().optional(),
+  notes: z.string().max(500).optional(),
+  noPickup: z.boolean().default(false),
+  overrideReason: z.string().max(300).optional(),
+});
+
 export type ProcurementInput = z.infer<typeof procurementInputSchema>;
+export type ProcurementEditInput = z.infer<typeof procurementEditSchema>;
 
 export async function postProcurementBatch(rawInput: ProcurementInput, actorId: string, canOverrideRate = false) {
   const input = procurementInputSchema.parse(rawInput);
@@ -35,9 +49,17 @@ export async function postProcurementBatch(rawInput: ProcurementInput, actorId: 
     if (days > allowedBackdateDays) throw new Error(`Milk receipts can only be backdated ${allowedBackdateDays} days.`);
     const postedLines = input.lines.filter((line) => !line.noPickup && line.quantity.trim() !== "");
     if (postedLines.length === 0) throw new Error("Enter at least one pickup quantity");
-    const vendorIds = input.lines.map((line) => new ObjectId(line.vendorId));
-    const duplicate = await database.collection("milk_purchases").findOne({ vendorId: { $in: vendorIds }, businessDate: input.businessDate, shift: input.shift, status: "posted" }, { session });
-    if (duplicate) throw new Error("A vendor already has a posted entry for this date and shift");
+
+    const existingVendorEntries = await database.collection("milk_purchases").find({ businessDate: input.businessDate, shift: input.shift, status: "posted" }, { session }).toArray();
+    const postedVendorIds = new Set(existingVendorEntries.map((entry) => entry.vendorId.toString()));
+    for (const line of input.lines) {
+      if (line.noPickup || !line.quantity.trim()) continue;
+      const vendorId = new ObjectId(line.vendorId);
+      if (postedVendorIds.has(vendorId.toString())) {
+        const vendor = await database.collection("vendors").findOne({ _id: vendorId }, { session });
+        throw new Error(`${String(vendor?.name ?? "This vendor")} already has a posted entry for this date and shift`);
+      }
+    }
 
     const now = new Date();
     const number = transactionNo("PROC");
@@ -97,6 +119,119 @@ export async function postProcurementBatch(rawInput: ProcurementInput, actorId: 
     const result = { transactionNo: number, totalQuantityMilli: totalQuantityMilli.toString(), totalAmountPaisa: totalAmountPaisa.toString() };
     await database.collection("idempotency_records").insertOne({ key: input.idempotencyKey, operation: "procurement", result, createdAt: now }, { session });
     return result;
+  });
+}
+
+export async function updateProcurementEntry(rawInput: ProcurementEditInput, actorId: string, canOverrideRate = false) {
+  const input = procurementEditSchema.parse(rawInput);
+  return transaction(async (database, session) => {
+    const existing = await database.collection("milk_purchases").findOne({ transactionNo: input.transactionNo, lineNo: input.lineNo, status: "posted" }, { session });
+    if (!existing) throw new Error("This procurement line is missing or already reversed.");
+
+    const vendorId = new ObjectId(input.vendorId);
+    const vendor = await database.collection("vendors").findOne({ _id: vendorId, active: true }, { session });
+    if (!vendor) throw new Error("One of the selected vendors is missing or inactive.");
+
+    const duplicateVendorEntry = await database.collection("milk_purchases").findOne({ vendorId: vendorId, businessDate: input.businessDate, shift: input.shift, status: "posted", _id: { $ne: existing._id } }, { session });
+    if (duplicateVendorEntry) throw new Error("vendor already has a posted entry for this date and shift");
+
+    const now = new Date();
+    const quantityMilli = input.noPickup ? 0n : quantityToMilli(input.quantity);
+    const effectiveAt = new Date(`${input.businessDate}T23:59:59.999Z`);
+    const rateRecord = await database.collection("vendor_rate_history").findOne({ vendorId, effectiveFrom: { $lte: effectiveAt }, $or: [{ effectiveTo: null }, { effectiveTo: { $gt: effectiveAt } }] }, { session, sort: { effectiveFrom: -1 } });
+    if (!rateRecord?.ratePaisa) throw new Error(`${String(vendor.name)} has no milk rate for this date.`);
+
+    let ratePaisa = integerToBigInt(rateRecord.ratePaisa);
+    if (input.overrideRate?.trim()) {
+      const requested = rupeesToPaisa(input.overrideRate);
+      if (requested !== ratePaisa) {
+        if (!canOverrideRate) throw new Error("You are not allowed to change vendor rates.");
+        if (!input.overrideReason?.trim()) throw new Error(`Enter a rate-change reason for ${String(vendor.name)}.`);
+        ratePaisa = requested;
+      }
+    }
+
+    if (quantityMilli < 0n || ratePaisa <= 0n) throw new Error("Quantity and rate must be greater than zero");
+
+    const oldQuantityMilli = integerToBigInt(existing.quantityMilli);
+    const oldAmountPaisa = integerToBigInt(existing.amountPaisa);
+    const newAmountPaisa = quantityMilli > 0n ? multiplyQuantityRate(quantityMilli, ratePaisa) : 0n;
+    const deltaQuantityMilli = quantityMilli - oldQuantityMilli;
+    const deltaAmountPaisa = newAmountPaisa - oldAmountPaisa;
+
+    await database.collection("milk_purchases").updateOne(
+      { _id: existing._id, status: "posted" },
+      {
+        $set: {
+          vendorId: vendorId,
+          businessDate: input.businessDate,
+          shift: input.shift,
+          quantity: Decimal128.fromString(input.quantity),
+          quantityMilli: Long.fromBigInt(quantityMilli),
+          ratePaisa: Long.fromBigInt(ratePaisa),
+          amountPaisa: Long.fromBigInt(newAmountPaisa),
+          rateOverrideReason: input.overrideReason || null,
+          notes: input.notes || null,
+          status: "posted",
+          updatedAt: now,
+          updatedBy: actorId,
+        },
+      },
+      { session },
+    );
+
+    await database.collection("party_ledger_entries").updateOne(
+      { transactionNo: input.transactionNo, lineNo: input.lineNo, partyType: "vendor", partyId: vendorId, status: "posted" },
+      { $set: { businessDate: input.businessDate, creditPaisa: Long.fromBigInt(newAmountPaisa), updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    await database.collection("inventory_movements").updateOne(
+      { transactionNo: input.transactionNo, lineNo: input.lineNo, productSku: "MILK-001", type: "vendor-purchase", status: "posted" },
+      { $set: { businessDate: input.businessDate, quantityMilli: Long.fromBigInt(quantityMilli), unitCostPaisa: Long.fromBigInt(ratePaisa), date: now, updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    const batch = await database.collection("procurement_batches").findOne({ transactionNo: input.transactionNo, status: "posted" }, { session });
+    if (!batch) throw new Error("This procurement receipt header is missing or already reversed.");
+
+    const revisedBatchQuantityMilli = integerToBigInt(batch.totalQuantityMilli) + deltaQuantityMilli;
+    const revisedBatchAmountPaisa = integerToBigInt(batch.totalAmountPaisa) + deltaAmountPaisa;
+    await database.collection("procurement_batches").updateOne(
+      { _id: batch._id, status: "posted" },
+      { $set: { businessDate: input.businessDate, shift: input.shift, totalQuantityMilli: Long.fromBigInt(revisedBatchQuantityMilli), totalAmountPaisa: Long.fromBigInt(revisedBatchAmountPaisa), updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    const milk = await database.collection("products").findOne({ sku: "MILK-001" }, { session });
+    if (!milk) throw new Error("Fresh Milk product is missing.");
+    const currentStockMilli = integerToBigInt(milk.stockMilli);
+    const currentAverageCostPaisa = integerToBigInt(milk.averageCostPaisa);
+    const revisedStockMilli = currentStockMilli - oldQuantityMilli + quantityMilli;
+    const revisedAverageCostPaisa = revisedStockMilli > 0n ? (currentStockMilli * currentAverageCostPaisa + deltaAmountPaisa * 1000n) / revisedStockMilli : 0n;
+    await database.collection("products").updateOne(
+      { _id: milk._id },
+      { $set: { stockMilli: Long.fromBigInt(revisedStockMilli), averageCostPaisa: Long.fromBigInt(revisedAverageCostPaisa), updatedAt: now, updatedBy: actorId } },
+      { session },
+    );
+
+    await database.collection("audit_logs").insertOne({
+      actorId,
+      action: "edit",
+      entity: "procurement_entry",
+      entityId: existing._id,
+      metadata: {
+        transactionNo: input.transactionNo,
+        lineNo: input.lineNo,
+        previousQuantityMilli: oldQuantityMilli.toString(),
+        updatedQuantityMilli: quantityMilli.toString(),
+        previousAmountPaisa: oldAmountPaisa.toString(),
+        updatedAmountPaisa: newAmountPaisa.toString(),
+      },
+      createdAt: now,
+    }, { session });
+
+    return { transactionNo: input.transactionNo, lineNo: input.lineNo, quantityMilli: quantityMilli.toString(), amountPaisa: newAmountPaisa.toString() };
   });
 }
 
